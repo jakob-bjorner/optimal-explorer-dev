@@ -35,7 +35,7 @@ def save_game_log(game_id: int, history: List[Tuple[str, List[int]]], success: b
     }
     
     # Append to JSONL file
-    log_file = log_dir / "combination_lock_games.jsonl"
+    log_file = log_dir / "prompting.jsonl"
     with open(log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
 
