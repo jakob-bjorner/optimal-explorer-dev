@@ -178,3 +178,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+verl/wandb/
+wandb/
+verl/outputs/
+outputs/
+.art/
+unsloth_compiled_cache/

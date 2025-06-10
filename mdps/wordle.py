@@ -68,12 +68,7 @@ class Wordle:
         """Load words from the words file."""
         words_file = os.path.join(os.path.dirname(__file__), 'wordle_data', 'words.txt')
         if not os.path.exists(words_file):
-            # Create a default word list if file doesn't exist
-            default_words = ['apple', 'beach', 'cloud', 'dance', 'eagle', 
-                           'flame', 'ghost', 'heart', 'ivory', 'joker']
-            with open(words_file, 'w') as f:
-                f.write('\n'.join(default_words))
-            return default_words
+            raise Exception("No wordle word file found.")
         
         with open(words_file, 'r') as f:
             return [word.strip().lower() for word in f.readlines()]
