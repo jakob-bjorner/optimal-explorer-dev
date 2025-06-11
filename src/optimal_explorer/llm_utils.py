@@ -14,16 +14,19 @@ async def llm_call(
         frequency_penalty=0,
         presence_penalty=0,
         repetition_penalty=1,
-        top_k=0
+        top_k=0,
+        messages=None,
+        get_everything=False, # option for getting not just the content, for reasoning logging.
     ):
     """Send a POST request to OpenRouter API with the provided system and user messages."""
     api_key = os.getenv("OPENROUTER_API_KEY")
     api_url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"}
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ]
+    if messages is None:
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
     
     payload = {
         "model": model,
@@ -51,7 +54,10 @@ async def llm_call(
                         if not data["choices"]:
                             print("API request failed: 'choices' key is empty in response.")
                             continue
-                        return data["choices"][0]["message"]["content"]
+                        if get_everything:
+                            return data
+                        else:
+                            return data["choices"][0]["message"]["content"]
             except Exception as e:
                 print(f"API request failed. Retrying... ({attempt + 1}/5)")
                 continue

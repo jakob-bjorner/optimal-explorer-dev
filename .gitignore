@@ -185,3 +185,4 @@ verl/outputs/
 outputs/
 .art/
 unsloth_compiled_cache/
+wordle_*.jsonl

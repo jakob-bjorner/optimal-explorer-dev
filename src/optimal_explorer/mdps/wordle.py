@@ -60,18 +60,25 @@ class Wordle:
         self.max_guesses = max_guesses
         self.current_guess = 0
         self.target_word = None
-        self.possible_words = self._load_words()
+        self.guess_history = []
+        self.possible_answer_words, self.possible_guess_words = self._load_words()
         self.observation_space = self._create_observation_space()
         self.action_space = self._create_action_space()
         
-    def _load_words(self) -> List[str]:
+    def _load_words(self) -> Tuple[List[str], List[str]]:
         """Load words from the words file."""
-        words_file = os.path.join(os.path.dirname(__file__), 'wordle_data', 'words.txt')
-        if not os.path.exists(words_file):
-            raise Exception("No wordle word file found.")
+        total_words_file = os.path.join(os.path.dirname(__file__), 'wordle_data', "valid-wordle-words.txt")
+        answer_words_file = os.path.join(os.path.dirname(__file__), 'wordle_data', 'valid-answer-wordle-words.txt')
+        if not os.path.exists(answer_words_file):
+            raise Exception(f"No wordle word file {answer_words_file} found.")
+        if not os.path.exists(total_words_file):
+            raise Exception(f"No wordle word file {total_words_file} found.")
         
-        with open(words_file, 'r') as f:
-            return [word.strip().lower() for word in f.readlines()]
+        with open(answer_words_file, 'r') as f:
+            possible_answer_words = [word.strip().lower() for word in f.readlines()]
+        with open(total_words_file, 'r') as f:
+            possible_guess_words = [word.strip().lower() for word in f.readlines()]
+        return possible_answer_words, possible_guess_words
     
     def _create_observation_space(self) -> dict:
         """Create the observation space for the MDP."""
@@ -83,7 +90,7 @@ class Wordle:
     
     def _create_action_space(self) -> List[str]:
         """Create the action space (all possible valid words)."""
-        return self.possible_words
+        return self.possible_guess_words
     
     def reset(self, seed: Optional[int] = None) -> dict:
         """
@@ -100,7 +107,8 @@ class Wordle:
             np.random.seed(seed)
             
         self.current_guess = 0
-        self.target_word = random.choice(self.possible_words)
+        self.target_word = random.choice(self.possible_answer_words)
+        self.guess_history = []
         return self._get_observation()
     
     def step(self, action: str) -> Tuple[dict, float, bool, dict]:
@@ -116,6 +124,7 @@ class Wordle:
             done: Whether the episode is finished
             info: Additional information
         """
+        action = action.lower()
         if not self._is_valid_guess(action):
             return self._get_observation(), -1.0, True, {'error': 'Invalid guess'}
         
@@ -132,12 +141,13 @@ class Wordle:
         else:
             reward = 0.0
             done = False
-            
+        self.guess_history += [action.lower()]
+        
         return self._get_observation(), reward, done, {'feedback': feedback}
     
     def _is_valid_guess(self, guess: str) -> bool:
         """Check if a guess is valid."""
-        return guess.lower() in self.possible_words
+        return guess.lower() in self.possible_guess_words
     
     def _get_feedback(self, guess: str) -> List[int]:
         """
@@ -145,7 +155,8 @@ class Wordle:
         Returns a list of integers: 0 (⬜), 1 (🟨), 2 (🟩)
         """
         feedback = []
-        target_chars = list(self.target_word)
+        assert isinstance(self.target_word, str)
+        target_chars: list = list(self.target_word)
         guess_chars = list(guess.lower())
         
         # First pass: mark correct positions (🟩)
@@ -175,10 +186,6 @@ class Wordle:
             'guess_history': self.guess_history
         }
     
-    @property
-    def guess_history(self) -> List[str]:
-        """Get the history of guesses made so far."""
-        return ['' for _ in range(self.max_guesses)]  # Placeholder - implement actual history tracking
     
     def render(self) -> None:
         """Render the current state of the game."""
