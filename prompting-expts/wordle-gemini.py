@@ -99,7 +99,7 @@ async def easy_wordle_game(game_id = 0, model_name="openai/gpt-4o-mini", tempera
                 obs, reward, done, info = mdp.step(guess)
                 if "feedback" not in info:
                         log_info['errored'] = True
-                        pprint(log_info)
+                        # pprint(log_info)
                         raise Exception(f"invalid guess '{guess}'", log_info)
 
                 feedback = info['feedback']
@@ -121,11 +121,19 @@ async def easy_wordle_game(game_id = 0, model_name="openai/gpt-4o-mini", tempera
         return log_info
 
 model_name = ["google/gemini-2.5-pro-preview", "deepseek/deepseek-r1-0528", "openai/gpt-4o-mini"][0]
-num_times = 100
+num_times = 10
 temperature = 1
 
 async def main():
-    res = await asyncio.gather(*[easy_wordle_game(i, model_name, temperature) for i in range(num_times)], return_exceptions=True)
+    res = await asyncio.gather(*[easy_wordle_game(i, model_name, temperature) for i in range(num_times)], return_exceptions=False)
+
+    cum_regret = np.mean([contains_success(r) for r in res if isinstance(r, dict)]), len([r for r in res if isinstance(r, dict)])
+
+    print(f"Average number of turns to solve wordle with {model_name} is {cum_regret[0]} over {cum_regret[1]} games.")
+    # save this info
+    with open(f"wordle_gemini_summary_num_times_{num_times}_temperature_{temperature}.txt", "w") as f:
+        json.dump({"model_name": model_name, "num_times": num_times, "temperature": temperature, "cum_regret": cum_regret}, f, indent=2)
+    print(f"Saved results to wordle_gemini_results.txt")
 
     def contains_success(r):
         target_word = r['target_word']
@@ -134,9 +142,6 @@ async def main():
     with open(f"wordle_gemini_{model_name.split('/')[-1]}_num_times_{num_times}_temperature_{temperature}.txt", "w") as f:
         json.dump(res, f, indent=2)
 
-    cum_regret = np.mean([contains_success(r) for r in res if isinstance(r, dict)]), len([r for r in res if isinstance(r, dict)])
-
-    print(f"Average number of turns to solve wordle with {model_name} is {cum_regret[0]} over {cum_regret[1]} games.")
     print(f"Saved results to wordle_gemini_{model_name.split('/')[-1]}_num_times_{num_times}_temperature_{temperature}.txt")
 
 if __name__ == "__main__":

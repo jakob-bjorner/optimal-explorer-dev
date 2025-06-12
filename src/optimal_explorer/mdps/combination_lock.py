@@ -50,6 +50,7 @@ class CombinationLock:
         self.observation_space = self._create_observation_space()
         self.action_space = self._create_action_space()
         self.guess_history = []
+        self.posterior = []
         
     def _generate_combinations(self) -> List[str]:
         """Generate all possible 3-digit combinations with distinct digits."""
@@ -64,7 +65,8 @@ class CombinationLock:
         return {
             'current_attempt': (0, self.max_attempts),
             'feedback_history': [(0, 3) for _ in range(self.max_attempts)],  # 0: Not in code, 1: Wrong position, 2: Correct position
-            'guess_history': ['' for _ in range(self.max_attempts)]
+            'guess_history': ['' for _ in range(self.max_attempts)],
+            'posterior': [list(range(10)) for _ in range(self.combination_length)]  # Possible digits for each position
         }
     
     def _create_action_space(self) -> List[str]:
@@ -87,9 +89,51 @@ class CombinationLock:
             
         self.current_attempt = 0
         self.guess_history = []
+        self.posterior = [list(range(10)) for _ in range(self.combination_length)]  # Initialize with all digits 0-9
         self.target_combination = random.choice(self.possible_combinations)
         return self._get_observation()
     
+    def generate_posterior_str(self) -> str:
+        """
+        Return the current posterior as a string in the format: 
+        Possible digits at position 1: [0, 1, 3, 6]
+        Possible digits at position 2: [0, 1, 2, 4]
+        """
+        posterior_str = []
+        for pos, options in enumerate(self.posterior):
+            posterior_str.append(f"Possible digits at position {pos + 1}: {options}")
+        return '\n'.join(posterior_str)
+
+    def _update_posterior(self, guess: str, feedback: List[int]) -> List[List[int]]:
+        """
+        Update the posterior based on the guess and feedback.
+        
+        Args:
+            guess: The guessed combination
+            feedback: Feedback from the guess (list of integers)
+        Returns:
+            Updated posterior (options for each position)
+        """
+        curr_posterior = self.posterior
+        guess_digits = [int(d) for d in guess]
+        
+        # Update based on feedback
+        for pos in range(self.combination_length):
+            if feedback[pos] == 2:  # 🟩 - exact match
+                # Only this digit is possible at this position
+                curr_posterior[pos] = [guess_digits[pos]]
+            elif feedback[pos] == 1:  # 🟨 - digit exists but wrong position
+                # Remove this digit from this position
+                if guess_digits[pos] in curr_posterior[pos]:
+                    curr_posterior[pos].remove(guess_digits[pos])
+            elif feedback[pos] == 0:  # ⬜ - digit doesn't exist
+                # Remove this digit from all positions
+                for p in range(self.combination_length):
+                    if guess_digits[pos] in curr_posterior[p]:
+                        curr_posterior[p].remove(guess_digits[pos])
+        
+        return curr_posterior
+
     def step(self, action: str) -> Tuple[dict, float, bool, dict]:
         """
         Take a step in the environment by making a guess.
@@ -107,6 +151,7 @@ class CombinationLock:
             return self._get_observation(), -1.0, True, {'error': 'Invalid guess'}
         
         feedback = self._get_feedback(action)
+        self.posterior = self._update_posterior(action, feedback)
         self.current_attempt += 1
         self.guess_history.append(action)
         
@@ -121,7 +166,10 @@ class CombinationLock:
             reward = 0.0
             done = False
             
-        return self._get_observation(), reward, done, {'feedback': feedback}
+        return self._get_observation(), reward, done, {
+            'feedback': feedback,
+            'posterior': self.generate_posterior_str()
+        }
     
     def _is_valid_guess(self, guess: str) -> bool:
         """Check if a guess is valid."""

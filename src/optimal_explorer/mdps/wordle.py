@@ -61,6 +61,7 @@ class Wordle:
         self.current_guess = 0
         self.target_word = None
         self.guess_history = []
+        self.posterior = []
         self.possible_answer_words, self.possible_guess_words = self._load_words()
         self.observation_space = self._create_observation_space()
         self.action_space = self._create_action_space()
@@ -85,7 +86,7 @@ class Wordle:
         return {
             'current_guess': (0, self.max_guesses),
             'feedback_history': [(0, 3) for _ in range(self.max_guesses)],  # 0: ⬜, 1: 🟨, 2: 🟩
-            'guess_history': ['' for _ in range(self.max_guesses)]
+            'guess_history': ['' for _ in range(self.max_guesses)],
         }
     
     def _create_action_space(self) -> List[str]:
@@ -109,8 +110,15 @@ class Wordle:
         self.current_guess = 0
         self.target_word = random.choice(self.possible_answer_words)
         self.guess_history = []
+        self.posterior = []
         return self._get_observation()
     
+    def generate_posterior(self) -> str:
+        # TODO: Implement a method to generate the posterior
+        base_posterior = [list(range(26) for _ in range(self.word_length))]
+        return base_posterior
+        
+
     def step(self, action: str) -> Tuple[dict, float, bool, dict]:
         """
         Take a step in the environment by making a guess.
@@ -125,10 +133,12 @@ class Wordle:
             info: Additional information
         """
         action = action.lower()
+        # pick a random guess if the action is not valid
         if not self._is_valid_guess(action):
-            return self._get_observation(), -1.0, True, {'error': 'Invalid guess'}
+            action = random.choice(self.possible_guess_words)
         
         feedback = self._get_feedback(action)
+        self.posterior = self._update_posterior(action, feedback)
         self.current_guess += 1
         
         # Calculate reward
@@ -142,12 +152,32 @@ class Wordle:
             reward = 0.0
             done = False
         self.guess_history += [action.lower()]
+
+        info = {
+            'feedback': feedback, 
+            'posterior': self.generate_posterior(), 
+            'target_word': self.target_word
+        }
         
-        return self._get_observation(), reward, done, {'feedback': feedback}
+        return self._get_observation(), reward, done, info
     
     def _is_valid_guess(self, guess: str) -> bool:
         """Check if a guess is valid."""
         return guess.lower() in self.possible_guess_words
+
+    def _update_posterior(self, guess: str, feedback: List[int]) -> List[List[int]]:
+        """
+        Update the posterior based on the guess and feedback.
+        
+        Args:
+            guess: The guessed word
+            feedback: Feedback from the guess (list of integers)
+        Returns:
+            Updated posterior (options for each position)
+        """
+        curr_posterior = self.posterior
+        # TODO: write this
+        return curr_posterior
     
     def _get_feedback(self, guess: str) -> List[int]:
         """
