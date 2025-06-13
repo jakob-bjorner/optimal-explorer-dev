@@ -11,12 +11,13 @@
 # moving to larger model 3 B model? try see how long training takes, and compare to performance I can get for 
 # GSM8k in the zero shot setting
 # 7B model.
+# srun --pty --qos scavenger --partition scavenger --mem=125GB --cpus-per-task=16 --gpus-per-node=A100-PCI-80GB:4 --time 300 -J rdev bash 
 WANDB_API_KEY=d20252b9059d2790c321604fd8d850aa70c2e2d4 RAY_DEBUG=1 SGL_DISABLE_TP_MEMORY_INBALANCE_CHECK=True PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
- data.train_files=/nas/ucb/jbjorner3/data/single_turn_combo_lock_posterior/train.parquet \
- data.val_files=/nas/ucb/jbjorner3/data/single_turn_combo_lock_posterior/test.parquet \
+ data.train_files=/nas/ucb/jbjorner3/data/single_turn_combo_lock_history_posterior/train.parquet \
+ data.val_files=/nas/ucb/jbjorner3/data/single_turn_combo_lock_history_posterior/test.parquet \
  algorithm.adv_estimator=grpo \
  data.train_batch_size=256 \
- data.max_prompt_length=1024 \
+ data.max_prompt_length=2048 \
  data.max_response_length=256 \
  actor_rollout_ref.rollout.name=sglang \
  actor_rollout_ref.model.path=Qwen/Qwen2.5-3B-Instruct \
@@ -36,16 +37,16 @@ WANDB_API_KEY=d20252b9059d2790c321604fd8d850aa70c2e2d4 RAY_DEBUG=1 SGL_DISABLE_T
  trainer.critic_warmup=0 \
  trainer.logger=['console','wandb'] \
  trainer.project_name='verl-tests' \
- trainer.experiment_name='grpo-3b-combo-posterior-0' \
+ trainer.experiment_name='grpo-3b-combo-history-posterior-0' \
  trainer.log_val_generations=10 \
- trainer.validation_data_dir=/nas/ucb/jbjorner3/dev/dev_verl/checkpoints/verl-tests/grpo-3b-combo-posterior-0/ \
+ trainer.validation_data_dir=/nas/ucb/jbjorner3/dev/optimal-explorer-dev/verl/checkpoints/verl-tests/grpo-3b-combo-history-posterior-0/ \
  trainer.val_before_train=True \
  trainer.default_hdfs_dir=null \
  trainer.n_gpus_per_node=4 \
  trainer.nnodes=1 \
  trainer.save_freq=10 \
  trainer.test_freq=10 \
- +custom_reward_function.path=/nas/ucb/jbjorner3/dev/dev_verl/verl/verl/utils/reward_score/jakob_single_turn_combo_lock.py \
+ +custom_reward_function.path=/nas/ucb/jbjorner3/dev/optimal-explorer-dev/verl/verl/utils/reward_score/jakob_single_turn_combo_lock.py \
  trainer.total_epochs=15 2>&1 | tee verl_demo2.log
 # increasing the n_gpus_per_node from 2 to 4 and increasing tensor parallelism from 1 to 2 and increment name from -0 to -1. 
 # Enabled val before train.
