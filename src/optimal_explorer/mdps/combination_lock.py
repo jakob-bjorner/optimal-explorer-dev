@@ -50,7 +50,7 @@ class CombinationLock:
         self.observation_space = self._create_observation_space()
         self.action_space = self._create_action_space()
         self.guess_history = []
-        self.posterior = []
+        self.posterior = [list(range(10)) for _ in range(self.combination_length)]
         
     def _generate_combinations(self) -> List[str]:
         """Generate all possible 3-digit combinations with distinct digits."""
@@ -147,6 +147,8 @@ class CombinationLock:
             done: Whether the episode is finished
             info: Additional information
         """
+        if (self.current_attempt == self.max_attempts) or ([2,2,2] in self._get_observation()['feedback_history']):
+            raise Exception(f"episode already terminated, {self.current_attempt=}, {self._get_observation()['feedback_history']=}")
         if not self._is_valid_guess(action):
             return self._get_observation(), -1.0, True, {'error': 'Invalid guess'}
         
@@ -223,6 +225,16 @@ class CombinationLock:
                 feedback_str = ''.join(['⬜' if f == 0 else '🟨' if f == 1 else '🟩' for f in feedback])
                 print(f"Attempt {i+1}: {guess} -> {feedback_str}", flush=True)
 
+    def get_trajectory_score(self) -> float:
+        """Compute the score of the trajectory to be used in RL."""
+        # must be careful to return negative reward if the model hasn't finished, because this is bad.
+        obs = self._get_observation()
+        attempt_number = obs["current_attempt"]
+        last_guess_correct = [2,2,2] == obs['feedback_history'][-1]
+        if not last_guess_correct:
+            return -1.0
+        else:
+            return (self.max_attempts + 1 - attempt_number)/self.max_attempts
 def sample_combination_lock_mdp(seed: Optional[int] = None) -> CombinationLock:
     """
     Sample a Combination Lock MDP instance with a random target combination.

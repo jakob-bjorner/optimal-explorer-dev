@@ -1165,9 +1165,11 @@ class RayPPOTrainer:
                 # TODO: implement actual tflpo and theoretical tflpo
                 n_gpus = self.resource_pool_manager.get_n_gpus()
                 metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
-
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)
+                
+                # breakpoint() # this would be required potentially for later. Not necessary now I don't think
+                # figure out how to print all the important info from the batch info. this is the multi turn interaction, the token counts, and the reward. as well as the ground truth.
 
                 if is_last_step:
                     pprint(f"Final validation metrics: {last_val_metrics}")

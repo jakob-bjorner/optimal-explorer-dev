@@ -18,6 +18,6 @@ actor_rollout_ref:
     name: sglang_async
     multi_turn:
       enable: True
-      max_turns: 5
+      max_turns: 8 # this will depend on the enviornment. right now enforced only by this parameter and the environments termination, but this can vary with multiple tool calls being enabled.
       format: qwen
       # tool_config_path: "./config/tool_config/gsm8k_tool_config.yaml"

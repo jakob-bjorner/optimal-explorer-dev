@@ -63,6 +63,10 @@ def load_reward_manager(config, tokenizer, num_examine, **reward_kwargs):
         from verl.workers.reward_manager import NaiveRewardManager
 
         reward_manager_cls = NaiveRewardManager
+    elif reward_manager_name == "naivetool":
+        from verl.workers.reward_manager import NaiveRewardManagerWithToolCalls
+
+        reward_manager_cls = NaiveRewardManagerWithToolCalls
     elif reward_manager_name == "prime":
         from verl.workers.reward_manager import PrimeRewardManager
 

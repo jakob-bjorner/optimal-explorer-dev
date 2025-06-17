@@ -471,13 +471,23 @@ class AsyncSGLangRollout(BaseRollout):
                             for tool_call in parsed_tool_calls
                         ]
                     )
+                    # breakpoint() # breakpoint here for seeing what is returned from the function call. 
+                    # It seems the whatever is given from .execute, and metrics seems to be flexible. good enought for me. 
+                    # Something else to test thats slightly concerning is the statefulness of the tool call.
                     for i, (tool_call, (resp, reward, metrics)) in enumerate(zip(parsed_tool_calls, tool_call_results)):
                         _req.add_tool_response_message(self.tokenizer, resp, (i == len(parsed_tool_calls) - 1), format=self.config.multi_turn.format)
                         if len(_req.input_ids) >= self.config.max_model_len:
                             break
+
+                        if "done" in metrics and metrics['done']: # addition by Jakob
+                            finish_reason_type = FinishReasonTypeEnum.STOP
+                            _req.state = AsyncRolloutRequestStateEnum.COMPLETED
+
                     if len(_req.input_ids) >= self.config.max_model_len:
                         finish_reason_type = FinishReasonTypeEnum.STOP
                         break
+                    if _req.state == AsyncRolloutRequestStateEnum.COMPLETED: # Jakob added this for the above.
+                        break 
                     _req.state = AsyncRolloutRequestStateEnum.RUNNING
                 else:
                     raise ValueError(f"Unexpected tool calling last message state: {_req.messages[-1]}")
@@ -700,12 +710,12 @@ class AsyncSGLangRollout(BaseRollout):
         # free cache engine
         if self.config.free_cache_engine and self._engine is not None and self._tp_rank == 0:
             self._engine.flush_cache()
-
         return DataProto(batch=batch, non_tensor_batch={"messages": np.array(messages), "reward_scores": np.array(reward_scores)})
 
     def _preprocess_prompt_to_async_rollout_requests(self, prompts: DataProto, n: int) -> list[AsyncRolloutRequest]:
         assert "raw_prompt" in prompts.non_tensor_batch, "need data.return_raw_chat=True, due to no official way do parse_messages"
         req_list = []
+        # breakpoint()
         for data_idx, raw_prompt in enumerate(prompts.non_tensor_batch["raw_prompt"]):
             for rollout_offset in range(n):
                 if self._tool_schemas:
