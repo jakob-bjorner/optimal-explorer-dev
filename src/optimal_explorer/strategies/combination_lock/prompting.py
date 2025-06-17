@@ -13,7 +13,7 @@ from llm_utils import llm_call
 
 def save_game_log(game_id: int, history: List[Tuple[str, List[int]]], success: bool, target: str):
     """Save game log to a single JSONL file in the logs directory."""
-    log_dir = Path(__file__).parent / "logs"
+    log_dir = Path(__file__).parent / "logs/game_results"
     log_dir.mkdir(exist_ok=True)
     
     # Create log entry
@@ -75,11 +75,19 @@ async def play_single_game(game_id: int) -> Tuple[bool, int, List[float]]:
             user_prompt += "Based on the feedback, make your next guess:"
         
         # Get LLM's guess
-        llm_response = await llm_call(
+        data = await llm_call(
             system=system_prompt,
             user=user_prompt,
-            temperature=0.1  # Low temperature for more deterministic responses
+            temperature=0.1,  # Low temperature for more deterministic responses
+            get_everything=True,
         )
+        data['game_id'] = game_id
+        log_dir = Path(__file__).parent / "logs/llm_calls"
+        log_dir.mkdir(exist_ok=True)
+        log_file = log_dir / f"prompting.jsonl"
+        with open(log_file, 'a') as f:
+            f.write(json.dumps(data) + '\n')
+        llm_response = data["choices"][0]["message"]["content"]
         
         # Clean up response to get just the guess
         guess = ''.join(c for c in llm_response if c.isdigit())
