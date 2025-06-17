@@ -1,22 +1,22 @@
 import numpy as np
 import random
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any
 import itertools
 
 def play_combination_lock_interactive():
     mdp = sample_combination_lock_mdp()
     
-    print("Welcome to Combination Lock! You have 8 attempts to find the 3-digit combination.", flush=True)
+    print(f"Welcome to Combination Lock! You have {mdp.max_attempts} attempts to find the {mdp.combination_length}-character combination.", flush=True)
     print("Enter 'q' to quit at any time.\n", flush=True)
     
     while True:
-        guess = input("Enter your 3-digit guess (e.g. 123): ").lower()
+        guess = input(f"Enter your {mdp.combination_length}-character guess: ").lower()
         if guess == 'q':
-            print(f"Game over! The combination was: {''.join(map(str, mdp.target_combination))}", flush=True)
+            print(f"Game over! The combination was: {mdp.target_combination}", flush=True)
             break
             
         if not mdp._is_valid_guess(guess):
-            print(f"'{guess}' is not a valid 3-digit combination. Please try again.", flush=True)
+            print(f"'{guess}' is not a valid combination. Please try again.", flush=True)
             continue
             
         obs, reward, done, info = mdp.step(guess)
@@ -27,24 +27,31 @@ def play_combination_lock_interactive():
             if reward == 1.0:
                 print("\nCongratulations! You unlocked it! 🎉", flush=True)
             else:
-                print(f"\nGame over! The combination was: {''.join(map(str, mdp.target_combination))}", flush=True)
+                print(f"\nGame over! The combination was: {mdp.target_combination}", flush=True)
             break
         if mdp.current_attempt >= mdp.max_attempts:
-            print(f"\nGame over! The combination was: {''.join(map(str, mdp.target_combination))}", flush=True)
+            print(f"\nGame over! The combination was: {mdp.target_combination}", flush=True)
             break
 
 class CombinationLock:
-    def __init__(self, combination_length: int = 3, max_attempts: int = 8):
+    def __init__(
+            self, 
+            combination_length: int = 3, 
+            max_attempts: int = 8,
+            vocab: str = '0123456789'
+            ):
         """
         Initialize the Combination Lock MDP.
         
         Args:
             combination_length: Length of the combination (default: 3)
             max_attempts: Maximum number of allowed attempts (default: 8)
+            vocab: String of valid characters that can be used in combinations (default: '0123456789')
         """
         self.combination_length = combination_length
         self.max_attempts = max_attempts
         self.current_attempt = 0
+        self.vocab = vocab
         self.target_combination = None
         self.possible_combinations = self._generate_combinations()
         self.observation_space = self._create_observation_space()
@@ -53,11 +60,11 @@ class CombinationLock:
         self.posterior = [list(range(10)) for _ in range(self.combination_length)]
         
     def _generate_combinations(self) -> List[str]:
-        """Generate all possible 3-digit combinations with distinct digits."""
-        digits = list(range(10))  # 0-9
+        """Generate all possible combinations with distinct characters from the vocabulary."""
+        chars = list(self.vocab)
         combinations = []
-        for combo in itertools.permutations(digits, self.combination_length):
-            combinations.append(''.join(map(str, combo)))
+        for combo in itertools.permutations(chars, self.combination_length):
+            combinations.append(''.join(combo))
         return combinations
     
     def _create_observation_space(self) -> dict:
@@ -66,7 +73,7 @@ class CombinationLock:
             'current_attempt': (0, self.max_attempts),
             'feedback_history': [(0, 3) for _ in range(self.max_attempts)],  # 0: Not in code, 1: Wrong position, 2: Correct position
             'guess_history': ['' for _ in range(self.max_attempts)],
-            'posterior': [list(range(10)) for _ in range(self.combination_length)]  # Possible digits for each position
+            'posterior': [list(self.vocab) for _ in range(self.combination_length)]  # Possible characters for each position
         }
     
     def _create_action_space(self) -> List[str]:
@@ -89,22 +96,22 @@ class CombinationLock:
             
         self.current_attempt = 0
         self.guess_history = []
-        self.posterior = [list(range(10)) for _ in range(self.combination_length)]  # Initialize with all digits 0-9
+        self.posterior = [list(self.vocab) for _ in range(self.combination_length)]  # Initialize with all characters from vocab
         self.target_combination = random.choice(self.possible_combinations)
         return self._get_observation()
     
     def generate_posterior_str(self) -> str:
         """
         Return the current posterior as a string in the format: 
-        Possible digits at position 1: [0, 1, 3, 6]
-        Possible digits at position 2: [0, 1, 2, 4]
+        Possible characters at position 1: ['a', 'b', 'c']
+        Possible characters at position 2: ['d', 'e', 'f']
         """
         posterior_str = []
         for pos, options in enumerate(self.posterior):
-            posterior_str.append(f"Possible digits at position {pos + 1}: {options}")
+            posterior_str.append(f"Possible characters at position {pos + 1}: {options}")
         return '\n'.join(posterior_str)
 
-    def _update_posterior(self, guess: str, feedback: List[int]) -> List[List[int]]:
+    def _update_posterior(self, guess: str, feedback: List[int]) -> List[List[str]]:
         """
         Update the posterior based on the guess and feedback.
         
@@ -115,22 +122,22 @@ class CombinationLock:
             Updated posterior (options for each position)
         """
         curr_posterior = self.posterior
-        guess_digits = [int(d) for d in guess]
+        guess_chars = list(guess)
         
         # Update based on feedback
         for pos in range(self.combination_length):
             if feedback[pos] == 2:  # 🟩 - exact match
-                # Only this digit is possible at this position
-                curr_posterior[pos] = [guess_digits[pos]]
-            elif feedback[pos] == 1:  # 🟨 - digit exists but wrong position
-                # Remove this digit from this position
-                if guess_digits[pos] in curr_posterior[pos]:
-                    curr_posterior[pos].remove(guess_digits[pos])
-            elif feedback[pos] == 0:  # ⬜ - digit doesn't exist
-                # Remove this digit from all positions
+                # Only this character is possible at this position
+                curr_posterior[pos] = [guess_chars[pos]]
+            elif feedback[pos] == 1:  # 🟨 - character exists but wrong position
+                # Remove this character from this position
+                if guess_chars[pos] in curr_posterior[pos]:
+                    curr_posterior[pos].remove(guess_chars[pos])
+            elif feedback[pos] == 0:  # ⬜ - character doesn't exist
+                # Remove this character from all positions
                 for p in range(self.combination_length):
-                    if guess_digits[pos] in curr_posterior[p]:
-                        curr_posterior[p].remove(guess_digits[pos])
+                    if guess_chars[pos] in curr_posterior[p]:
+                        curr_posterior[p].remove(guess_chars[pos])
         
         return curr_posterior
 
@@ -176,8 +183,8 @@ class CombinationLock:
     def _is_valid_guess(self, guess: str) -> bool:
         """Check if a guess is valid."""
         return (len(guess) == self.combination_length and 
-                guess.isdigit() and 
-                len(set(guess)) == self.combination_length)  # All digits must be distinct
+                all(c in self.vocab for c in guess) and 
+                len(set(guess)) == self.combination_length)  # All characters must be distinct
     
     def _get_feedback(self, guess: str) -> List[int]:
         """
@@ -185,24 +192,24 @@ class CombinationLock:
         Returns a list of integers: 0 (Not in code), 1 (Wrong position), 2 (Correct position)
         """
         feedback = []
-        target_digits = list(self.target_combination)
-        guess_digits = list(guess)
+        target_chars = list(self.target_combination)
+        guess_chars = list(guess)
         
         # First pass: mark correct positions
-        for i in range(len(guess_digits)):
-            if guess_digits[i] == target_digits[i]:
+        for i in range(len(guess_chars)):
+            if guess_chars[i] == target_chars[i]:
                 feedback.append(2)  # Correct position
-                target_digits[i] = None  # Mark as used
+                target_chars[i] = None  # Mark as used
             else:
                 feedback.append(0)  # Temporary "Not in code"
         
-        # Second pass: mark correct digits in wrong positions
-        for i in range(len(guess_digits)):
+        # Second pass: mark correct characters in wrong positions
+        for i in range(len(guess_chars)):
             if feedback[i] != 2:  # If not already marked as correct position
-                if guess_digits[i] in target_digits:
+                if guess_chars[i] in target_chars:
                     feedback[i] = 1  # Wrong position
-                    # Remove the first occurrence of this digit
-                    target_digits[target_digits.index(guess_digits[i])] = None
+                    # Remove the first occurrence of this character
+                    target_chars[target_chars.index(guess_chars[i])] = None
         
         return feedback
     

@@ -61,6 +61,7 @@ class Wordle:
         self.current_guess = 0
         self.target_word = None
         self.guess_history = []
+        self.feedback_history = []
         self.posterior = []
         self.possible_answer_words, self.possible_guess_words = self._load_words()
         self.observation_space = self._create_observation_space()
@@ -110,6 +111,7 @@ class Wordle:
         self.current_guess = 0
         self.target_word = random.choice(self.possible_answer_words)
         self.guess_history = []
+        self.feedback_history = []
         self.posterior = []
         return self._get_observation()
     
@@ -151,7 +153,8 @@ class Wordle:
         else:
             reward = 0.0
             done = False
-        self.guess_history += [action.lower()]
+        self.guess_history += [action]
+        self.feedback_history += [feedback]
 
         info = {
             'feedback': feedback, 
