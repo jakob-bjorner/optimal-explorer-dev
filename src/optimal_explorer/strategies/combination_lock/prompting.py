@@ -13,7 +13,7 @@ from llm_utils import llm_call
 
 def save_game_log(game_id: int, history: List[Tuple[str, List[int]]], success: bool, target: str):
     """Save game log to a single JSONL file in the logs directory."""
-    log_dir = Path(__file__).parent / "logs/game_results"
+    log_dir = Path(__file__).parent / "logs"
     log_dir.mkdir(exist_ok=True)
     
     # Create log entry
@@ -39,25 +39,50 @@ def save_game_log(game_id: int, history: List[Tuple[str, List[int]]], success: b
     with open(log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
 
-async def play_single_game(game_id: int) -> Tuple[bool, int, List[float]]:
+def get_system_prompt(prompt_style: int, vocab: str) -> str:
+    """Get the system prompt based on the prompt style."""
+    if prompt_style == 1:
+        return f"""You are playing a combination lock game. The rules are:
+1. Objective - Guess the secret {len(vocab)}-character combination within 8 attempts.
+2. Valid characters - You can only use these characters: {list(vocab)}
+3. Each character in your guess must be unique (no repeats)
+4. Color feedback after each guess:
+   - Green (🟩) - the character is in the combination and in the correct position.
+   - Yellow (🟨) - the character is in the combination but in a different position.
+   - Gray (⬜) - the character does not appear in the combination at all.
+5. Respond with ONLY your guess as a string of {len(vocab)} characters, nothing else."""
+    else:  # prompt_style == 2
+        return f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
+1. Objective - Guess the secret {len(vocab)}-character combination within 8 attempts.
+2. Valid characters - You can only use these characters: {list(vocab)}
+3. Each character in your guess must be unique (no repeats)
+4. Color feedback after each guess:
+   - Green (🟩) - the character is in the combination and in the correct position.
+   - Yellow (🟨) - the character is in the combination but in a different position.
+   - Gray (⬜) - the character does not appear in the combination at all.
+5. Important strategy guidelines:
+   - Use your first few guesses to explore different characters and positions
+   - Pay attention to character frequency and position patterns
+   - Use the feedback to systematically narrow down possibilities
+6. Respond with ONLY your guess as a string of {len(vocab)} characters, nothing else."""
+
+async def play_single_game(
+        game_id: int, 
+        prompt_style: int,
+        model: str,
+        max_attempts: int,
+        vocab: str,
+        ) -> Tuple[bool, int, List[float]]:
     """
     Play a single game of combination lock with the LLM.
     Returns (success, num_attempts, regret_per_attempt)
     """
-    mdp = CombinationLock()
+    mdp = CombinationLock(max_attempts=max_attempts, vocab=vocab)
     mdp.reset(seed=game_id)  # Use game_id as seed for reproducibility
     
-    # Initial system prompt explaining the game
-    system_prompt = """You are playing a 3-digit combination lock game. The rules are:
-1. You need to guess a 3-digit combination where all digits are different
-2. You have 8 attempts to find the correct combination
-3. After each guess, you'll get feedback:
-   - ⬜ means the digit is not in the combination
-   - 🟨 means the digit is in the combination but in the wrong position
-   - 🟩 means the digit is in the correct position
-4. Make your next guess based on the feedback
-5. Respond with ONLY your 3-digit guess, nothing else"""
-
+    # Get system prompt based on style
+    system_prompt = get_system_prompt(prompt_style, mdp.vocab)
+    
     # Track game history
     history = []
     regret_per_attempt = []
@@ -70,32 +95,34 @@ async def play_single_game(game_id: int) -> Tuple[bool, int, List[float]]:
             user_prompt += f"Attempt {i+1}: {guess} -> {feedback_str}\n"
         
         if not history:
-            user_prompt += "Make your first guess (3 digits, all different):"
+            user_prompt += f"Make your first guess ({mdp.combination_length} characters, all different):"
         else:
             user_prompt += "Based on the feedback, make your next guess:"
         
         # Get LLM's guess
         data = await llm_call(
+            model=model,
             system=system_prompt,
             user=user_prompt,
-            temperature=0.1,  # Low temperature for more deterministic responses
+            temperature=0.1,
             get_everything=True,
         )
         data['game_id'] = game_id
         log_dir = Path(__file__).parent / "logs/llm_calls"
         log_dir.mkdir(exist_ok=True)
-        log_file = log_dir / f"prompting.jsonl"
+        log_file = log_dir / f"api_logs_style{prompt_style}_{model.split('/')[-1]}.jsonl"
         with open(log_file, 'a') as f:
             f.write(json.dumps(data) + '\n')
         llm_response = data["choices"][0]["message"]["content"]
-        
+
+        print(f'.', end='', flush=True)  # Print a dot for each game to indicate progress
         # Clean up response to get just the guess
-        guess = ''.join(c for c in llm_response if c.isdigit())
-        if len(guess) != 3 or len(set(guess)) != 3:
+        guess = ''.join(c for c in llm_response if c in mdp.vocab)
+        if len(guess) != mdp.combination_length or len(set(guess)) != mdp.combination_length:
             # If LLM gives invalid response, make a random valid guess
-            digits = list(range(10))
-            random.shuffle(digits)
-            guess = ''.join(map(str, digits[:3]))
+            chars = list(mdp.vocab)
+            random.shuffle(chars)
+            guess = ''.join(chars[:mdp.combination_length])
         
         # Make the guess
         obs, reward, done, info = mdp.step(guess)
@@ -111,9 +138,18 @@ async def play_single_game(game_id: int) -> Tuple[bool, int, List[float]]:
             save_game_log(game_id, history, reward == 1.0, mdp.target_combination)
             return reward == 1.0, len(history), regret_per_attempt
 
-async def main():
-    # Play 100 games asynchronously
-    tasks = [play_single_game(i) for i in range(100)]
+async def main(
+        prompt_style: int = 1, 
+        model: str = 'google/gemini-2.5-pro-preview',
+        num_games = 10,
+        ):
+    tasks = [play_single_game(
+            game_id=i, 
+            prompt_style=prompt_style,
+            model=model,
+            max_attempts=12,
+            vocab='!@#$%^&*pqrs5678',
+            ) for i in range(num_games)]
     results = await asyncio.gather(*tasks)
     
     # Calculate statistics
@@ -121,7 +157,7 @@ async def main():
     total_attempts = sum(attempts for _, attempts, _ in results)
     avg_attempts = total_attempts / len(results)
     
-    print(f"\nResults after 100 games:")
+    print(f"\nResults after {num_games} games (Prompt Style {prompt_style}):")
     print(f"Win rate: {wins}%")
     print(f"Average attempts per game: {avg_attempts:.2f}")
     
@@ -155,6 +191,7 @@ async def main():
     
     results_data = {
         "timestamp": datetime.now().isoformat(),
+        "prompt_style": prompt_style,
         "num_games": len(results),
         "win_rate": wins,
         "avg_attempts": avg_attempts,
@@ -170,10 +207,29 @@ async def main():
             )
         }
     }
-    
-    results_file = results_dir / "prompting_results.json"
+    model_name = model.split('/')[-1]
+    results_file = results_dir / f"prompting_results_style{prompt_style}_{model_name}.json"
     with open(results_file, 'w') as f:
         json.dump(results_data, f, indent=2)
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    import argparse
+    parser = argparse.ArgumentParser()
+    models = [
+        'google/gemini-2.5-pro-preview',
+        'openai/o3',
+        'anthropic/claude-3.5-sonnet',
+        'anthropic/claude-opus-4',
+        'deepseek/deepseek-r1-0528',
+    ]
+    parser.add_argument("--prompt-style", type=int, choices=[1, 2], default=1,
+                      help="Prompt style: 1 for basic rules, 2 for optimal exploration strategy")
+    parser.add_argument("--num-games", type=int, default=10,
+                      help="Number of games to play")
+    args = parser.parse_args()
+    
+    async def run_all_models():
+        tasks = [main(args.prompt_style, model=model, num_games=args.num_games) for model in models]
+        await asyncio.gather(*tasks)
+    
+    asyncio.run(run_all_models())
