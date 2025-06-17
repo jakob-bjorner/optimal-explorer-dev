@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-06-16T08:56:31.025554",
+  "prompt_style": 1,
+  "num_games": 100,
+  "win_rate": 57,
+  "avg_attempts": 5.36,
+  "total_regret": 479.0,
+  "avg_regret_per_game": 4.79,
+  "attempt_distribution": {
+    "6": 58,
+    "4": 12,
+    "5": 25,
+    "3": 5
+  },
+  "cumulative_regret": {
+    "1": 1.0,
+    "2": 2.0,
+    "3": 2.95,
+    "4": 3.7800000000000002,
+    "5": 4.36,
+    "6": 4.79
+  }
+}
