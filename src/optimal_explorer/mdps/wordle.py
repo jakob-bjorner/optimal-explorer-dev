@@ -115,7 +115,7 @@ class Wordle:
         self.posterior = []
         return self._get_observation()
     
-    def generate_posterior(self) -> str:
+    def generate_posterior(self) -> list:
         # TODO: Implement a method to generate the posterior
         base_posterior = [list(range(26) for _ in range(self.word_length))]
         return base_posterior
