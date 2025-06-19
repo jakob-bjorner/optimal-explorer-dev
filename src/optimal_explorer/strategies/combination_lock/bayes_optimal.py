@@ -1,11 +1,11 @@
 import sys
-import numpy as np
 from typing import List, Dict, Tuple, Set
 from pathlib import Path
 import json
 from datetime import datetime
 import itertools
 import random
+import argparse
 
 # Add parent directory to path to import from mdps
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -72,38 +72,88 @@ class BayesOptimalAgent:
                 self.known_positions[i] = char
     
     def select_action(self, history: List[Tuple[str, List[int]]]) -> str:
-        """Select the Bayes-optimal action given history."""
-        if not history:
-            # First guess: sample uniformly from untested characters
-            chars = list(self.untested_chars)
-            random.shuffle(chars)
-            return ''.join(chars[:self.combination_length])
-        
-        # If we know all positions, try the correct combination
-        if all(pos is not None for pos in self.known_positions):
-            return ''.join(self.known_positions)
-        
-        # If we have found all characters but not their positions
+        """Select the best action given history using a more intelligent heuristic."""
+        tried_guesses = {h[0] for h in history}
+
+        # 1. Certainty: If we know the full combination, guess it.
+        if all(p is not None for p in self.known_positions):
+            guess = "".join(self.known_positions)
+            if guess not in tried_guesses:
+                return guess
+
+        # 2. Refinement Phase: We know all characters, just need their positions.
         if len(self.found_chars) == self.combination_length:
-            # Try a permutation of the found characters
-            chars = list(self.found_chars)
-            random.shuffle(chars)
-            return ''.join(chars)
+            template = list(self.known_positions)
+            
+            # Identify characters whose positions are not yet known
+            known_chars_in_place = {c for c in template if c is not None}
+            chars_to_permute = list(self.found_chars - known_chars_in_place)
+            
+            # Identify the indexes of the open slots
+            open_indices = [i for i, pos in enumerate(template) if pos is None]
+
+            # Try all permutations of the unknown characters in the open slots
+            for p in itertools.permutations(chars_to_permute):
+                candidate = list(template)
+                for i, char in zip(open_indices, p):
+                    candidate[i] = char
+                guess = "".join(candidate)
+                if guess not in tried_guesses:
+                    return guess
         
-        # Otherwise, sample uniformly from remaining untested characters
-        chars = list(self.untested_chars)
-        random.shuffle(chars)
-        return ''.join(chars[:self.combination_length])
+        # 3. Exploration Phase: We still need to find new characters.
+        # Construct an intelligent guess that respects knowns and explores unknowns.
+        template = list(self.known_positions)
+        slots_to_fill = template.count(None)
+
+        # Gather characters to fill the empty slots. Prioritize untested characters.
+        # Use existing found_chars (that aren't locked in place) if needed to form a valid guess.
+        chars_for_filling = list(self.untested_chars)
+        random.shuffle(chars_for_filling)
+        
+        known_chars_in_place = {c for c in template if c is not None}
+        other_usable_chars = list(self.found_chars - known_chars_in_place)
+        random.shuffle(other_usable_chars)
+        
+        # Combine lists to ensure we have enough unique characters for a valid guess
+        potential_fillers = chars_for_filling + other_usable_chars
+        
+        fill_idx = 0
+        for i in range(self.combination_length):
+            if template[i] is None:
+                # Find the next unique character to insert
+                while fill_idx < len(potential_fillers) and potential_fillers[fill_idx] in template:
+                    fill_idx += 1
+                if fill_idx < len(potential_fillers):
+                    template[i] = potential_fillers[fill_idx]
+                    fill_idx += 1
+
+        # If we successfully built a full, valid guess, return it
+        if None not in template and len(set(template)) == self.combination_length:
+            guess = "".join(template)
+            if guess not in tried_guesses:
+                return guess
+        
+        # 4. Fallback: If above strategies fail, find any valid, untried combination.
+        # This is a safety net for edge cases.
+        all_possible_guesses = self.all_combinations
+        random.shuffle(all_possible_guesses) # Randomize to avoid getting stuck
+        for g in all_possible_guesses:
+            if g not in tried_guesses:
+                return g
+
+        # Ultimate fallback: Should realistically never be reached if max_attempts is reasonable.
+        return random.choice(self.all_combinations)
 
 
 def save_game_log(game_id: int, history: List[Tuple[str, List[int]]], success: bool, 
-                  target: str, belief_sizes: List[int]):
-    """Save game log to a JSONL file."""
+                  target: str, belief_sizes: List[int], model: str):
+    """Save game log to a JSONL file (no prompt_style, log to bayes_optimal.jsonl)."""
     log_dir = Path(__file__).parent / "logs"
-    log_dir.mkdir(exist_ok=True)
-    
+    log_dir.mkdir(parents=True, exist_ok=True)
     log_entry = {
         "game_id": game_id,
+        "model": model,
         "timestamp": datetime.now().isoformat(),
         "target_combination": target,
         "success": success,
@@ -119,145 +169,94 @@ def save_game_log(game_id: int, history: List[Tuple[str, List[int]]], success: b
             for i, (guess, feedback) in enumerate(history)
         ]
     }
-    
     log_file = log_dir / "bayes_optimal.jsonl"
     with open(log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
 
 
-def play_single_game(agent: BayesOptimalAgent, game_id: int) -> Tuple[bool, int, List[float]]:
+def play_single_game(agent: BayesOptimalAgent, game_id: int, model: str) -> Tuple[bool, int, List[float]]:
     """Play a single game with Bayes-optimal agent. Returns (success, num_attempts, regret_per_attempt)."""
-    mdp = CombinationLock(vocab=agent.vocab)
+    mdp = CombinationLock(vocab=agent.vocab, max_attempts=agent.max_attempts, combination_length=agent.combination_length)
     mdp.reset(seed=game_id)
-    
     history = []
     belief_sizes = []
     regret_per_attempt = []
-    
     while len(history) < mdp.max_attempts:
-        # Select action based on current belief
         guess = agent.select_action(history)
-        
-        # Take action
         obs, reward, done, info = mdp.step(guess)
-        feedback = info['feedback']
+        feedback = info.get('feedback')
+        if feedback is None:
+            print(f"Invalid guess encountered: {guess}. Info: {info}. Replacing with a random valid guess.")
+            # Generate a random valid guess
+            valid_guesses = [g for g in agent.all_combinations if g not in [h[0] for h in history]]
+            if valid_guesses:
+                guess = random.choice(valid_guesses)
+            else:
+                guess = agent.select_action([])  # fallback to agent's default
+            obs, reward, done, info = mdp.step(guess)
+            feedback = info.get('feedback')
+            if feedback is None:
+                print(f"Still invalid after random guess: {guess}. Info: {info}. Ending game.")
+                break
         history.append((guess, feedback))
-        
-        # Update belief
         agent._update_belief(guess, feedback)
         belief_sizes.append(len(agent.untested_chars) + len(agent.found_chars))
-        
-        # Calculate regret as shortfall against optimal value function
-        # V*(s) = 1, V^π(s) = 1 if solved, 0 if not solved
         regret_per_attempt.append(1.0 - (1.0 if done and reward == 1.0 else 0.0))
-        
         if done and reward == 1.0:
-            save_game_log(game_id, history, True, mdp.target_combination, belief_sizes)
+            save_game_log(game_id, history, True, mdp.target_combination, belief_sizes, model)
             return True, len(history), regret_per_attempt
-    
-    # Failed to find combination
-    save_game_log(game_id, history, False, mdp.target_combination, belief_sizes)
+    save_game_log(game_id, history, False, mdp.target_combination, belief_sizes, model)
     return False, len(history), regret_per_attempt
 
 
 def main():
-    # Test with different vocabularies and combination lengths
-    test_configs = [
-        (3, '0123456789'),  # Original 3-digit case
-        (3, '!@#$%^&*pqrs5678'),  # Same as prompting.py
-        (4, '0123456789'),  # 4-digit case
-        (3, 'abcdefghijklmnopqrstuvwxyz'),  # Letters only
-    ]
-    
-    for combination_length, vocab in test_configs:
-        agent = BayesOptimalAgent(combination_length=combination_length, vocab=vocab)
-        num_games = 100
-        
-        # Play games
-        results = []
-        total_regret = 0.0
-        
-        print(f"\nRunning Bayes-optimal agent on {num_games} games...")
-        print(f"Combination length: {combination_length}, Vocabulary: {vocab}")
-        for game_id in range(num_games):
-            success, attempts, regret_per_attempt = play_single_game(agent, game_id)
-            results.append((success, attempts, regret_per_attempt))
-            total_regret += sum(regret_per_attempt)
-            
-            if (game_id + 1) % 10 == 0:
-                print(f"Completed {game_id + 1} games...")
-        
-        # Calculate statistics
-        wins = sum(1 for success, _, _ in results if success)
-        total_attempts = sum(attempts for _, attempts, _ in results)
-        avg_attempts = total_attempts / len(results)
-        
-        print(f"\n{'='*50}")
-        print(f"BAYES-OPTIMAL AGENT RESULTS ({num_games} games)")
-        print(f"Combination length: {combination_length}, Vocabulary: {vocab}")
-        print(f"{'='*50}")
-        print(f"Win rate: {wins}%")
-        print(f"Average attempts per game: {avg_attempts:.2f}")
-        print(f"Total regret: {total_regret:.1f}")
-        print(f"Average regret per game: {total_regret/num_games:.3f}")
-        
-        # Print distribution of attempts
-        attempt_dist = {}
-        for _, attempts, _ in results:
-            attempt_dist[attempts] = attempt_dist.get(attempts, 0) + 1
-        
-        print("\nAttempt distribution:")
-        for attempts in sorted(attempt_dist.keys()):
-            print(f"{attempts} attempts: {attempt_dist[attempts]} games")
-        
-        # Calculate cumulative regret by attempt number
-        regret_by_attempts = {}
-        for _, _, regret_per_attempt in results:
-            for attempt_num, regret in enumerate(regret_per_attempt, 1):
-                regret_by_attempts[attempt_num] = regret_by_attempts.get(attempt_num, 0) + regret
-        
-        print("\nAverage cumulative regret by attempt number:")
-        cumulative_regret = 0
-        for attempt_num in sorted(regret_by_attempts.keys()):
-            avg_regret = regret_by_attempts[attempt_num] / num_games
-            cumulative_regret += avg_regret
-            print(f"After {attempt_num} attempts: {cumulative_regret:.3f} regret")
-        
-        # Store results in JSON file
-        results_dir = Path(__file__).parent / "results"
-        results_dir.mkdir(exist_ok=True)
-        
-        results_data = {
-            "timestamp": datetime.now().isoformat(),
-            "combination_length": combination_length,
-            "vocab": vocab,
-            "num_games": num_games,
-            "win_rate": wins,
-            "avg_attempts": avg_attempts,
-            "total_regret": total_regret,
-            "avg_regret_per_game": total_regret / num_games,
-            "attempt_distribution": attempt_dist,
-            "cumulative_regret": {
-                str(attempt_num): cumulative_regret
-                for attempt_num, cumulative_regret in enumerate(
-                    [sum(regret_by_attempts.get(i, 0) / num_games for i in range(1, j + 1))
-                     for j in range(1, max(regret_by_attempts.keys()) + 1)],
-                    1
-                )
-            }
-        }
-        
-        results_file = results_dir / f"bayes_optimal_results_l{combination_length}_v{len(vocab)}.json"
-        with open(results_file, 'w') as f:
-            json.dump(results_data, f, indent=2)
-        
-        # Analyze failure cases
-        failures = [(i, attempts) for i, (success, attempts, _) in enumerate(results) if not success]
-        if failures:
-            print(f"\nFailed games: {len(failures)}")
-            print("Game IDs of failures:", [game_id for game_id, _ in failures])
-        else:
-            print("\nNo failures! Perfect performance.")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--combination-length", type=int, default=3, help="Length of the combination")
+    parser.add_argument("--vocab", type=str, default="!@#$%^&*pqrs5678", help="Vocabulary to use")
+    parser.add_argument("--max-attempts", type=int, default=12, help="Maximum number of attempts")
+    parser.add_argument("--num-games", type=int, default=100, help="Number of games to play")
+    parser.add_argument("--model", type=str, default="bayes_optimal", help="Model name (for logging)")
+    args = parser.parse_args()
+
+    agent = BayesOptimalAgent(combination_length=args.combination_length, max_attempts=args.max_attempts, vocab=args.vocab)
+    num_games = args.num_games
+    model = args.model
+
+    results = []
+    total_regret = 0.0
+    print(f"\nRunning Bayes-optimal agent on {num_games} games...")
+    print(f"Combination length: {args.combination_length}, Vocabulary: {args.vocab}, Max attempts: {args.max_attempts}")
+    for game_id in range(num_games):
+        # Reset agent state for each game
+        agent = BayesOptimalAgent(combination_length=args.combination_length, max_attempts=args.max_attempts, vocab=args.vocab)
+        success, attempts, regret_per_attempt = play_single_game(agent, game_id, model)
+        results.append((success, attempts, regret_per_attempt))
+        total_regret += sum(regret_per_attempt)
+        if (game_id + 1) % 10 == 0:
+            print(f"Completed {game_id + 1} games...")
+    wins = sum(1 for success, _, _ in results if success)
+    total_attempts = sum(attempts for _, attempts, _ in results)
+    avg_attempts = total_attempts / len(results)
+    print(f"\n{'='*50}")
+    print(f"BAYES-OPTIMAL AGENT RESULTS ({num_games} games)")
+    print(f"Combination length: {args.combination_length}, Vocabulary: {args.vocab}")
+    print(f"{'='*50}")
+    print(f"Win rate: {wins}%")
+    print(f"Average attempts per game: {avg_attempts:.2f}")
+    print(f"Total regret: {total_regret:.1f}")
+    print(f"Average regret per game: {total_regret/num_games:.3f}")
+    attempt_dist = {}
+    for _, attempts, _ in results:
+        attempt_dist[attempts] = attempt_dist.get(attempts, 0) + 1
+    print("\nAttempt distribution:")
+    for attempts in sorted(attempt_dist.keys()):
+        print(f"{attempts} attempts: {attempt_dist[attempts]} games")
+    failures = [(i, attempts) for i, (success, attempts, _) in enumerate(results) if not success]
+    if failures:
+        print(f"\nFailed games: {len(failures)}")
+        print("Game IDs of failures:", [game_id for game_id, _ in failures])
+    else:
+        print("\nNo failures! Perfect performance.")
 
 
 if __name__ == "__main__":
