@@ -6,12 +6,18 @@ from pathlib import Path
 import json
 from datetime import datetime
 
-# Add parent directory to path to import from mdps
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from mdps.combination_lock import CombinationLock
 from llm_utils import llm_call
 
-def save_game_log(game_id: int, history: List[Tuple[str, List[int]]], success: bool, target: str):
+def save_game_log(
+        game_id: int, 
+        history: List[Tuple[str, List[int]]], 
+        success: bool, 
+        target: str,
+        prompt_style: int,
+        model: str,
+        ):
     """Save game log to a single JSONL file in the logs directory."""
     log_dir = Path(__file__).parent / "logs"
     log_dir.mkdir(exist_ok=True)
@@ -19,6 +25,8 @@ def save_game_log(game_id: int, history: List[Tuple[str, List[int]]], success: b
     # Create log entry
     log_entry = {
         "game_id": game_id,
+        "model": model,
+        "prompt_style": prompt_style,
         "timestamp": datetime.now().isoformat(),
         "target_combination": target,
         "success": success,
@@ -35,25 +43,25 @@ def save_game_log(game_id: int, history: List[Tuple[str, List[int]]], success: b
     }
     
     # Append to JSONL file
-    log_file = log_dir / "prompting.jsonl"
+    log_file = log_dir / f"game_results/style{prompt_style}.jsonl"
     with open(log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
 
-def get_system_prompt(prompt_style: int, vocab: str) -> str:
+def get_system_prompt(prompt_style: int, vocab: str, combination_length: int, max_attempts: int) -> str:
     """Get the system prompt based on the prompt style."""
     if prompt_style == 1:
         return f"""You are playing a combination lock game. The rules are:
-1. Objective - Guess the secret {len(vocab)}-character combination within 8 attempts.
+1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
 2. Valid characters - You can only use these characters: {list(vocab)}
 3. Each character in your guess must be unique (no repeats)
 4. Color feedback after each guess:
    - Green (🟩) - the character is in the combination and in the correct position.
    - Yellow (🟨) - the character is in the combination but in a different position.
    - Gray (⬜) - the character does not appear in the combination at all.
-5. Respond with ONLY your guess as a string of {len(vocab)} characters, nothing else."""
+5. Respond with ONLY your guess as a string of {combination_length} characters, nothing else."""
     else:  # prompt_style == 2
         return f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Guess the secret {len(vocab)}-character combination within 8 attempts.
+1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
 2. Valid characters - You can only use these characters: {list(vocab)}
 3. Each character in your guess must be unique (no repeats)
 4. Color feedback after each guess:
@@ -64,7 +72,7 @@ def get_system_prompt(prompt_style: int, vocab: str) -> str:
    - Use your first few guesses to explore different characters and positions
    - Pay attention to character frequency and position patterns
    - Use the feedback to systematically narrow down possibilities
-6. Respond with ONLY your guess as a string of {len(vocab)} characters, nothing else."""
+6. Respond with ONLY your guess as a string of {combination_length} characters, nothing else."""
 
 async def play_single_game(
         game_id: int, 
@@ -81,7 +89,7 @@ async def play_single_game(
     mdp.reset(seed=game_id)  # Use game_id as seed for reproducibility
     
     # Get system prompt based on style
-    system_prompt = get_system_prompt(prompt_style, mdp.vocab)
+    system_prompt = get_system_prompt(prompt_style, mdp.vocab, mdp.combination_length, max_attempts)
     
     # Track game history
     history = []
@@ -108,9 +116,16 @@ async def play_single_game(
             get_everything=True,
         )
         data['game_id'] = game_id
+        data['prompt_style'] = prompt_style
+        data['user_prompt'] = user_prompt
+        data['model'] = model
+        data['vocab'] = mdp.vocab
+        data['combination_length'] = mdp.combination_length
+        data['max_attempts'] = max_attempts
+        data['target_combination'] = mdp.target_combination
         log_dir = Path(__file__).parent / "logs/llm_calls"
         log_dir.mkdir(exist_ok=True)
-        log_file = log_dir / f"api_logs_style{prompt_style}_{model.split('/')[-1]}.jsonl"
+        log_file = log_dir / f"style{prompt_style}_{model.split('/')[-1]}.jsonl"
         with open(log_file, 'a') as f:
             f.write(json.dumps(data) + '\n')
         llm_response = data["choices"][0]["message"]["content"]
@@ -135,7 +150,7 @@ async def play_single_game(
         
         if done:
             # Save game log before returning
-            save_game_log(game_id, history, reward == 1.0, mdp.target_combination)
+            save_game_log(game_id, history, reward == 1.0, mdp.target_combination, prompt_style, model)
             return reward == 1.0, len(history), regret_per_attempt
 
 async def main(
@@ -143,6 +158,14 @@ async def main(
         model: str = 'google/gemini-2.5-pro-preview',
         num_games = 10,
         ):
+        
+    log_dir = Path(__file__).parent / "logs"
+    for file in log_dir.rglob(f"style{prompt_style}_*.jsonl"):
+        if file.is_file():
+            file.unlink()
+    print(f"Deleted existing log files for style {prompt_style} in {log_dir}")
+    print(f"Starting {num_games} games with prompt style {prompt_style} using model {model}")
+
     tasks = [play_single_game(
             game_id=i, 
             prompt_style=prompt_style,
@@ -151,66 +174,6 @@ async def main(
             vocab='!@#$%^&*pqrs5678',
             ) for i in range(num_games)]
     results = await asyncio.gather(*tasks)
-    
-    # Calculate statistics
-    wins = sum(1 for success, _, _ in results if success)
-    total_attempts = sum(attempts for _, attempts, _ in results)
-    avg_attempts = total_attempts / len(results)
-    
-    print(f"\nResults after {num_games} games (Prompt Style {prompt_style}):")
-    print(f"Win rate: {wins}%")
-    print(f"Average attempts per game: {avg_attempts:.2f}")
-    
-    # Print distribution of attempts
-    attempt_dist = {}
-    for _, attempts, _ in results:
-        attempt_dist[attempts] = attempt_dist.get(attempts, 0) + 1
-    
-    print("\nAttempt distribution:")
-    for attempts in sorted(attempt_dist.keys()):
-        print(f"{attempts} attempts: {attempt_dist[attempts]} games")
-    
-    # Calculate cumulative regret by attempt number
-    regret_by_attempts = {}
-    total_regret = 0.0
-    for _, _, regret_per_attempt in results:
-        for attempt_num, regret in enumerate(regret_per_attempt, 1):
-            regret_by_attempts[attempt_num] = regret_by_attempts.get(attempt_num, 0) + regret
-        total_regret += sum(regret_per_attempt)
-    
-    print("\nAverage cumulative regret by attempt number:")
-    cumulative_regret = 0
-    for attempt_num in sorted(regret_by_attempts.keys()):
-        avg_regret = regret_by_attempts[attempt_num] / len(results)
-        cumulative_regret += avg_regret
-        print(f"After {attempt_num} attempts: {cumulative_regret:.3f} regret")
-    
-    # Store results in JSON file
-    results_dir = Path(__file__).parent / "results"
-    results_dir.mkdir(exist_ok=True)
-    
-    results_data = {
-        "timestamp": datetime.now().isoformat(),
-        "prompt_style": prompt_style,
-        "num_games": len(results),
-        "win_rate": wins,
-        "avg_attempts": avg_attempts,
-        "total_regret": total_regret,
-        "avg_regret_per_game": total_regret / len(results),
-        "attempt_distribution": attempt_dist,
-        "cumulative_regret": {
-            str(attempt_num): cumulative_regret
-            for attempt_num, cumulative_regret in enumerate(
-                [sum(regret_by_attempts.get(i, 0) / len(results) for i in range(1, j + 1))
-                 for j in range(1, max(regret_by_attempts.keys()) + 1)],
-                1
-            )
-        }
-    }
-    model_name = model.split('/')[-1]
-    results_file = results_dir / f"prompting_results_style{prompt_style}_{model_name}.json"
-    with open(results_file, 'w') as f:
-        json.dump(results_data, f, indent=2)
 
 if __name__ == "__main__":
     import argparse
