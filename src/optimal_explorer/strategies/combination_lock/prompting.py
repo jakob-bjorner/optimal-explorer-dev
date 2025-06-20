@@ -218,7 +218,7 @@ async def update_belief(style, messages, model, belief_model_call_store: dict, m
             temperature=0.1,
             get_everything=True,
         )
-        print(".", end='', flush=True)
+        print("^", end='', flush=True)
         belief_model_call_store.update(data)
         messages += [{'role': 'assistant', "content": data["choices"][0]["message"]["content"]}]
         messages += [{'role':"user", 'content': f"Now make your next guess about the secret code based on your current beliefs. Please format your response as: <Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."}]
