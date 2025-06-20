@@ -135,7 +135,7 @@ class BayesOptimalAgent:
             return guess
 
         # elif no such symbols exist, ie we know the position of all tested symbols, then we can't gain any info from the remaining slots so use arbitrary symbols. 
-        guess = "".join(untested_chars) + untested_chars[0]*(self.combination_length - len(untested_chars))
+        guess = "".join(untested_chars) + list(set(self.vocab)-self.untested_chars)[:self.combination_length - len(untested_chars)]
         return guess
 
         # OLD:
