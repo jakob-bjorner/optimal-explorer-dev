@@ -58,6 +58,7 @@ class CombinationLock:
         self.action_space = self._create_action_space()
         self.guess_history = []
         self.posterior = [list(range(10)) for _ in range(self.combination_length)]
+        self.found_chars = set()
         
     def _generate_combinations(self) -> List[str]:
         """Generate all possible combinations with distinct characters from the vocabulary."""
@@ -127,17 +128,42 @@ class CombinationLock:
         # Update based on feedback
         for pos in range(self.combination_length):
             if feedback[pos] == 2:  # 🟩 - exact match
-                # Only this character is possible at this position
+                # guess_chars[pos] is impossible at all positions except pos
+                for p in range(self.combination_length):
+                    if guess_chars[pos] in curr_posterior[p]:
+                        curr_posterior[p].remove(guess_chars[pos])
                 curr_posterior[pos] = [guess_chars[pos]]
+                self.found_chars.add(guess_chars[pos])
             elif feedback[pos] == 1:  # 🟨 - character exists but wrong position
                 # Remove this character from this position
                 if guess_chars[pos] in curr_posterior[pos]:
                     curr_posterior[pos].remove(guess_chars[pos])
+                self.found_chars.add(guess_chars[pos])
             elif feedback[pos] == 0:  # ⬜ - character doesn't exist
                 # Remove this character from all positions
                 for p in range(self.combination_length):
                     if guess_chars[pos] in curr_posterior[p]:
                         curr_posterior[p].remove(guess_chars[pos])
+
+        found_chars_may_have_increased = True
+        while found_chars_may_have_increased:
+        # if we have found all the characters contained in the combination (might not know their positions), we can rule out any untested chars from all positions of the posterior
+            if len(self.found_chars) == self.combination_length:
+                unfound_chars = set(self.vocab) - self.found_chars
+                for pos in range(self.combination_length):
+                    curr_posterior[pos] = [c for c in curr_posterior[pos] if c not in unfound_chars]
+
+            found_chars_may_have_increased = False
+            # if by process of elimination we now have identified the position of some characters, we can remove them from the posterior at other positions
+            for pos, pos_chars in enumerate(curr_posterior):
+                if len(pos_chars) == 1:
+                    if pos_chars[0] not in self.found_chars:
+                        self.found_chars.add(pos_chars[0])
+                        found_chars_may_have_increased = True
+                    for p in range(self.combination_length):
+                        if pos_chars[0] in curr_posterior[p] and p != pos:
+                            curr_posterior[p].remove(pos_chars[0])
+
         
         return curr_posterior
 
