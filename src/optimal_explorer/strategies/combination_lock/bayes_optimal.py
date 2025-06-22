@@ -6,6 +6,7 @@ from datetime import datetime
 import itertools
 import random
 import argparse
+import copy
 
 # Add parent directory to path to import from mdps
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -57,55 +58,87 @@ class BayesOptimalAgent:
         
         return feedback
     
-    def _update_belief(self, guess: str, feedback: List[int]) -> None:
+    def _update_belief(self, guess: str, feedback: List[int], posterior: List[List[str]]) -> None:
         """Update belief based on new feedback."""
         guess_chars = list(guess)
         
         # Update untested and found characters
         for i, char in enumerate(guess_chars):
+            self.untested_chars.discard(char)
+
             if feedback[i] > 0:  # Character is in the combination
                 self.found_chars.add(char)
-            self.untested_chars.discard(char)
             
             # Update known positions
             if feedback[i] == 2:  # Correct position
                 self.known_positions[i] = char
+
+        for pos,pos_chars in enumerate(posterior):
+            if len(pos_chars) == 1:
+                self.known_positions[pos] = pos_chars[0]
+                self.found_chars.add(pos_chars[0])
+                self.untested_chars.discard(pos_chars[0])
     
-    def select_action(self, history: List[Tuple[str, List[int]]]) -> str:
+    def select_action(self, history: List[Tuple[str, List[int]]], posterior: List[List[str]]) -> str:
         """Select the best action given history using a more intelligent heuristic."""
         tried_guesses = {h[0] for h in history}
 
         # 1. Certainty: If we know the full combination, guess it.
-        if all(p is not None for p in self.known_positions):
-            guess = "".join(self.known_positions)
-            if guess not in tried_guesses:
-                return guess
+        if None not in self.known_positions:
+            return "".join(self.known_positions)
 
-        # 2. Refinement Phase: We know all characters, just need their positions.
-        if len(self.found_chars) == self.combination_length:
-            template = list(self.known_positions)
+        all_posterior_chars = set([char for position_chars in posterior for char in position_chars])
+         # 2. Refinement Phase: We know all characters, just need their positions.
+        guess = self.known_positions
+        if len(all_posterior_chars) == self.combination_length:
+            working_posterior = copy.deepcopy(posterior)
+            for pos, pos_chars in enumerate(working_posterior):
+                if guess[pos] is not None:
+                    continue
+                next_char_choices = set(pos_chars)-set(guess)
+                if len(next_char_choices) == 0:
+                    import pdb; pdb.set_trace()
+                guess[pos] = random.choice(list(next_char_choices))
+                new_guesses = True
+                while new_guesses and None in guess:
+                    new_guesses = False
+                    for posterior_i in range(pos+1, self.combination_length): # remove the guessed chars from posteriors in other positions
+                        for guess_i in range(pos, self.combination_length):
+                            if guess_i != posterior_i:
+                                working_posterior[posterior_i] = [c for c in working_posterior[posterior_i] if c != guess[guess_i]]
+                        if len(working_posterior[posterior_i]) == 1: # if this forces a later position to only have one choice, then we can fill it in
+                            guess[posterior_i] = working_posterior[posterior_i][0]
+                            new_guesses = True
+                
+            assert len(guess) == self.combination_length and "".join(guess) not in tried_guesses
+            return "".join(guess)
             
-            # Identify characters whose positions are not yet known
-            known_chars_in_place = {c for c in template if c is not None}
-            chars_to_permute = list(self.found_chars - known_chars_in_place)
-            
-            # Identify the indexes of the open slots
-            open_indices = [i for i, pos in enumerate(template) if pos is None]
+        # 3. Exploration Phase: We still need to find new characters. Do not guess known symbols in their correct positions, that produces no new information!
+        untested_chars = list(self.untested_chars)
+        random.shuffle(untested_chars)
 
-            # Try all permutations of the unknown characters in the open slots
-            for p in itertools.permutations(chars_to_permute):
-                candidate = list(template)
-                for i, char in zip(open_indices, p):
-                    candidate[i] = char
-                guess = "".join(candidate)
-                if guess not in tried_guesses:
-                    return guess
+        # if the set of untested symbols >= 3, uniformly sample a guess from the set of untested symbols.
+        if len(untested_chars) >= self.combination_length:
+            return "".join(untested_chars[:self.combination_length])
         
-        # 3. Exploration Phase: We still need to find new characters.
-        # Construct an intelligent guess that respects knowns and explores unknowns.
-        template = list(self.known_positions)
-        slots_to_fill = template.count(None)
+        known_chars_not_in_place = [c for c in self.found_chars if c not in self.known_positions]
+        # elif we have tested symbols that we know are in the combination but don't know their position - fill remaining slots by trying them in a new position
+        if len(known_chars_not_in_place) > 0:
+            if len(untested_chars) != 2:
+                import pdb; pdb.set_trace()
+            assert self.combination_length == 3 and len(untested_chars) == 2 # this strategy is only optimal for length 3 combinations
+            extra_char_to_use = random.choice(known_chars_not_in_place)
+            possible_positions_for_extra_char = [i for i, possible_chars in enumerate(posterior) if extra_char_to_use in possible_chars]
+            position_for_extra_char = random.choice(possible_positions_for_extra_char)
+            guess = "".join(untested_chars)
+            guess = guess[:position_for_extra_char] + extra_char_to_use + guess[position_for_extra_char:]
+            return guess
 
+        # elif no such symbols exist, ie we know the position of all tested symbols, then we can't gain any info from the remaining slots so use arbitrary symbols. 
+        guess = "".join(untested_chars) + list(set(self.vocab)-self.untested_chars)[:self.combination_length - len(untested_chars)]
+        return guess
+
+        # OLD:
         # Gather characters to fill the empty slots. Prioritize untested characters.
         # Use existing found_chars (that aren't locked in place) if needed to form a valid guess.
         chars_for_filling = list(self.untested_chars)
@@ -169,7 +202,7 @@ def save_game_log(game_id: int, history: List[Tuple[str, List[int]]], success: b
             for i, (guess, feedback) in enumerate(history)
         ]
     }
-    log_file = log_dir / "bayes_optimal.jsonl"
+    log_file = log_dir / f"{model}.jsonl"
     with open(log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
 
@@ -182,7 +215,7 @@ def play_single_game(agent: BayesOptimalAgent, game_id: int, model: str) -> Tupl
     belief_sizes = []
     regret_per_attempt = []
     while len(history) < mdp.max_attempts:
-        guess = agent.select_action(history)
+        guess = agent.select_action(history, mdp.posterior)
         obs, reward, done, info = mdp.step(guess)
         feedback = info.get('feedback')
         if feedback is None:
@@ -192,14 +225,14 @@ def play_single_game(agent: BayesOptimalAgent, game_id: int, model: str) -> Tupl
             if valid_guesses:
                 guess = random.choice(valid_guesses)
             else:
-                guess = agent.select_action([])  # fallback to agent's default
+                guess = agent.select_action([], mdp.posterior)  # fallback to agent's default
             obs, reward, done, info = mdp.step(guess)
             feedback = info.get('feedback')
             if feedback is None:
                 print(f"Still invalid after random guess: {guess}. Info: {info}. Ending game.")
                 break
         history.append((guess, feedback))
-        agent._update_belief(guess, feedback)
+        agent._update_belief(guess, feedback, mdp.posterior)
         belief_sizes.append(len(agent.untested_chars) + len(agent.found_chars))
         regret_per_attempt.append(1.0 - (1.0 if done and reward == 1.0 else 0.0))
         if done and reward == 1.0:
@@ -215,7 +248,7 @@ def main():
     parser.add_argument("--vocab", type=str, default="!@#$%^&*pqrs5678", help="Vocabulary to use")
     parser.add_argument("--max-attempts", type=int, default=12, help="Maximum number of attempts")
     parser.add_argument("--num-games", type=int, default=100, help="Number of games to play")
-    parser.add_argument("--model", type=str, default="bayes_optimal", help="Model name (for logging)")
+    parser.add_argument("--model", type=str, default="bayes_optimal_2", help="Model name (for logging)")
     args = parser.parse_args()
 
     agent = BayesOptimalAgent(combination_length=args.combination_length, max_attempts=args.max_attempts, vocab=args.vocab)
