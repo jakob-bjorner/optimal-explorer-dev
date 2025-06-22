@@ -110,11 +110,7 @@ def get_messages(prompt_style: int, vocab: str, combination_length: int, max_att
    - Green (🟩) - the character is in the combination and in the correct position.
    - Yellow (🟨) - the character is in the combination but in a different position.
    - Gray (⬜) - the character does not appear in the combination at all.
-5. Important strategy guidelines:
-   - Use your first few guesses to explore different characters and positions
-   - Pay attention to character frequency and position patterns
-   - Use the feedback to systematically narrow down possibilities
-6. Respond with ONLY your guess as a string of {combination_length} characters, nothing else."""}]
+5. Respond with ONLY your guess as a string of {combination_length} characters, nothing else."""}]
             messages += [{'role': 'user', 'content': f"Make your first guess ({mdp.combination_length} characters, all different):"}]
         else:
             messages = deepcopy(messages)
@@ -134,11 +130,7 @@ def get_messages(prompt_style: int, vocab: str, combination_length: int, max_att
 4. Color feedback after each guess:
    - Green (🟩) - the character is in the combination and in the correct position.
    - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all.
-5. Important strategy guidelines:
-   - Use your first few guesses to explore different characters and positions
-   - Pay attention to character frequency and position patterns
-   - Use the feedback to systematically narrow down possibilities"""}]
+   - Gray (⬜) - the character does not appear in the combination at all."""}]
             messages += [{'role': 'user', 'content': f"Make your first guess. " + instruction_suffix}]
         else:
             messages = deepcopy(messages)
@@ -150,7 +142,7 @@ def get_messages(prompt_style: int, vocab: str, combination_length: int, max_att
             else:
                 messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. Now make your next guess. " + instruction_suffix}]
     elif prompt_style == 5: # multi turn environment interaction where you document the belief state and the guess from the model.
-        instruction_suffix = """Now update your beliefs based on the feedback, and use your new beliefs to make your next guess about the secret code. Knowledge in your beliefs must only be updated but can never be discarded, forgotten, or removed. Do not say anything about which information is new and updated or old and remains the same. 
+        instruction_suffix = f"""Now update your beliefs based on the feedback, and use your new beliefs to make your next guess about the secret code. Knowledge in your beliefs must only be updated but can never be discarded, forgotten, or removed. Do not say anything about which information is new and updated or old and remains the same. 
 Please format your response as: <Beliefs>Your beliefs on what the answer can be given what you know so far</Beliefs><Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."""
         if messages is None:
             messages = [{"role": "system", 
@@ -161,11 +153,7 @@ Please format your response as: <Beliefs>Your beliefs on what the answer can be 
 4. Color feedback after each guess:
    - Green (🟩) - the character is in the combination and in the correct position.
    - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all.
-5. Important strategy guidelines:
-   - Use your first few guesses to explore different characters and positions
-   - Pay attention to character frequency and position patterns
-   - Use the feedback to systematically narrow down possibilities"""}]
+   - Gray (⬜) - the character does not appear in the combination at all."""}]
             messages += [{'role': 'user', 'content': f"Make your first guess. Please format your response as: <Beliefs>Your beliefs on what the answer can be given what you know so far</Beliefs><Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."}]
         else:
             messages = deepcopy(messages)
@@ -189,11 +177,7 @@ Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
 4. Color feedback after each guess:
    - Green (🟩) - the character is in the combination and in the correct position.
    - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all.
-5. Important strategy guidelines:
-   - Use your first few guesses to explore different characters and positions
-   - Pay attention to character frequency and position patterns
-   - Use the feedback to systematically narrow down possibilities"""}]
+   - Gray (⬜) - the character does not appear in the combination at all."""}]
             messages += [{'role': 'user', 'content': f"Construct a belief state from which you will be able to make a first guess. But do not make the guess yet. Please format your response as: <Beliefs>Your beliefs on what the answer can be given what you know so far</Beliefs."}]
         else:
             messages = deepcopy(messages)

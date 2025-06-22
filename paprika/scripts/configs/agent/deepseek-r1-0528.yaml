@@ -1,0 +1,17 @@
+model_name: deepseek/deepseek-r1-0528
+model_type: openrouter_api_models
+base_model_name: deepseek-r1-0528
+
+# No use for gpt models
+model_max_length: 131072
+
+# only used for making savefile directory
+model_name_summary: deepseek-r1-0528/deepseek-r1-0528
+
+# tokenizer name, used for tokenizer_separator
+tokenizer_name: deepseek-r1-0528
+
+# used for saving files
+save_file_name: deepseek-r1-0528
+
+finetuned_tokenizer: False
