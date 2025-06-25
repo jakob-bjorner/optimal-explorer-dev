@@ -18,6 +18,7 @@ def save_game_log(
         target: str,
         prompt_style: int,
         model: str,
+        reasoning_effort: str,
         ):
     """Save game log to a single JSONL file in the logs directory."""
     log_dir = Path(__file__).parent / "logs"
@@ -27,6 +28,7 @@ def save_game_log(
     log_entry = {
         "game_id": game_id,
         "model": model,
+        "reasoning_effort": reasoning_effort,
         "prompt_style": prompt_style,
         "timestamp": datetime.now().isoformat(),
         "target_combination": target,
@@ -44,11 +46,10 @@ def save_game_log(
     }
     
     # Append to JSONL file
-    log_file = log_dir / f"game_results/style{prompt_style}.jsonl"
+    reasoning_effort_str = reasoning_effort if reasoning_effort else "default"
+    log_file = log_dir / f"game_results/style{prompt_style}_{reasoning_effort_str}.jsonl"
     with open(log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
-
-
 
 def get_messages(prompt_style: int, vocab: str, combination_length: int, max_attempts: int, history, mdp, messages, assistant_message_history, error_handled) -> List[Dict[str, str]]:
     """Get the system prompt based on the prompt style."""
@@ -191,7 +192,8 @@ Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
     else:
         raise Exception(f"invalid {prompt_style = }")
     return messages
-async def update_belief(style, messages, model, belief_model_call_store: dict, mdp):
+
+async def update_belief(style, messages, model, belief_model_call_store: dict, mdp, ref):
     if style == 6:
         messages = deepcopy(messages)
         data: Dict = await llm_call( # type: ignore
@@ -201,6 +203,7 @@ async def update_belief(style, messages, model, belief_model_call_store: dict, m
             # user=user_prompt,
             temperature=0.1,
             get_everything=True,
+            reasoning_effort=ref,
         )
         print("^", end='', flush=True)
         belief_model_call_store.update(data)
@@ -215,6 +218,7 @@ async def play_single_game(
         model: str,
         max_attempts: int,
         vocab: str,
+        reasoning_effort: str = None,  # 'low', 'medium', 'high'
         ) -> Tuple[bool, int, List[float]]:
     """
     Play a single game of combination lock with the LLM.
@@ -238,7 +242,7 @@ async def play_single_game(
         
         messages = get_messages(prompt_style, mdp.vocab, mdp.combination_length, max_attempts, history, mdp, messages, assistant_message_history, error_handled)
         belief_model_call_store = dict()
-        messages = await update_belief(prompt_style, messages, model, belief_model_call_store, mdp)
+        messages = await update_belief(prompt_style, messages, model, belief_model_call_store, mdp, reasoning_effort)
         # if I want to call the model multiple times for one enviornment interaction, then I need to record this somehow within one json object. 
         # This will need to be slightly different than the typical json object, but I hope I can reuse some of the plotting code...
         attempt += 1
@@ -250,6 +254,7 @@ async def play_single_game(
             # user=user_prompt,
             temperature=0.1,
             get_everything=True,
+            reasoning_effort=reasoning_effort,
         )
         data['game_id'] = game_id
         data['prompt_style'] = prompt_style
@@ -258,6 +263,8 @@ async def play_single_game(
         data['vocab'] = mdp.vocab
         data['combination_length'] = mdp.combination_length
         data['max_attempts'] = max_attempts
+        data['reasoning_effort'] = reasoning_effort
+        data['timestamp'] = datetime.now().isoformat()
         data['attempt'] = attempt
         data['target_combination'] = mdp.target_combination
         if len(belief_model_call_store) != 0:
@@ -285,7 +292,8 @@ async def play_single_game(
 
         log_dir = Path(__file__).parent / "logs/llm_calls"
         log_dir.mkdir(exist_ok=True)
-        log_file = log_dir / f"style{prompt_style}_{model.split('/')[-1]}.jsonl"
+        reasoning_effort_str = reasoning_effort if reasoning_effort else "default"
+        log_file = log_dir / f"style{prompt_style}_{model.split('/')[-1]}_{reasoning_effort_str}.jsonl"
         with open(log_file, 'a') as f:
             f.write(json.dumps(data) + '\n')
 
@@ -311,14 +319,17 @@ async def main(
         prompt_style: int = 1, 
         model: str = 'google/gemini-2.5-pro-preview',
         num_games = 10,
+        reasoning_effort: str = None,  # 'low', 'medium', 'high'
         ):
-        
+    
     log_dir = Path(__file__).parent / "logs"
-    for file in log_dir.rglob(f"style{prompt_style}_*.jsonl"):
-        if file.is_file():
-            file.unlink()
-    print(f"Deleted existing log files for style {prompt_style} in {log_dir}")
-    print(f"Starting {num_games} games with prompt style {prompt_style} using model {model}")
+    
+    if not reasoning_effort:
+        for file in log_dir.rglob(f"style{prompt_style}_*.jsonl"):
+            if file.is_file():
+                file.unlink()
+        print(f"Deleted existing log files for style {prompt_style} in {log_dir}")
+        print(f"Starting {num_games} games with prompt style {prompt_style} using model {model}")
 
     tasks = [play_single_game(
             game_id=i, 
@@ -326,12 +337,33 @@ async def main(
             model=model,
             max_attempts=12,
             vocab='!@#$%^&*pqrs5678',
+            reasoning_effort=reasoning_effort,
             ) for i in range(num_games)]
     results = await asyncio.gather(*tasks)
 
+async def run_all_games(
+        prompt_styles: List[int], 
+        models: List[str], 
+        num_games: int,
+        reasoning_efforts: bool,
+        ):
+    if not reasoning_efforts:
+        for prompt_style in prompt_styles:
+            tasks = [main(prompt_style, model=model, num_games=num_games, reasoning_effort=None) for model in models]
+            await asyncio.gather(*tasks)
+    else:
+        for reasoning_effort in ["low", "medium", "high"]:
+            for prompt_style in prompt_styles:
+                tasks = [main(
+                        prompt_style, 
+                        model=model, 
+                        num_games=num_games,
+                        reasoning_effort=reasoning_effort,
+                        ) for model in models]
+                await asyncio.gather(*tasks)
+            print(f"Completed all games with reasoning effort: {reasoning_effort}")
+
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
     models = [
         # 'google/gemini-2.5-pro-preview',
         # 'openai/o3',
@@ -339,14 +371,8 @@ if __name__ == "__main__":
         # 'anthropic/claude-opus-4',
         'deepseek/deepseek-r1-0528',
     ]
-    parser.add_argument("--prompt-style", type=int, choices=[1, 2, 3, 4, 5, 6, 11, 12], default=1,
-                      help="Prompt style: 1 for basic rules, 2 for optimal exploration strategy, 3 for multiturn chat documenting guess only, 4 for multiturn documenting thinking and guess, 5 for multiturn documenting belief state and guess.")
-    parser.add_argument("--num-games", type=int, default=10,
-                      help="Number of games to play")
-    args = parser.parse_args()
+    reasoning_efforts: bool = True
+    prompt_styles = [3, 4, 5, 6]
+    num_games = 100
     
-    async def run_all_models():
-        tasks = [main(args.prompt_style, model=model, num_games=args.num_games) for model in models]
-        await asyncio.gather(*tasks)
-    
-    asyncio.run(run_all_models())
+    asyncio.run(run_all_games())
