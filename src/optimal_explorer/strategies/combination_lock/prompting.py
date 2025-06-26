@@ -209,6 +209,17 @@ async def update_belief(style, messages, model, belief_model_call_store: dict, m
 
     return messages
 
+def process_guess_msg(msg_str, vocab, combination_length):
+    remove_list = ["**", "</Answer>", "</answer>", "<Answer>", "<answer>", "</Ans>", "</ans>", "<Ans>", "<ans>","<Action>","</Action>","<action>","</action>"]
+    def rem_list_from_str(s: str):
+        if s.endswith("**"):
+            s = s[:-2]
+        for rm_str in remove_list:
+            s = s.replace(rm_str, "")
+        return s
+    guess = ''.join(c for c in rem_list_from_str(msg_str) if c in vocab)[-combination_length:].lower()
+    return guess
+
 async def play_single_game(
         game_id: int, 
         prompt_style: int,
@@ -266,14 +277,7 @@ async def play_single_game(
 
         llm_response = data["choices"][0]["message"]["content"]
         assistant_message_history += [data["choices"][0]["message"]]
-        remove_list = ["**", "</Answer>", "</answer>", "<Answer>", "<answer>", "</Ans>", "</ans>", "<Ans>", "<ans>",]
-        def rem_list_from_str(s: str):
-            if s.endswith("**"):
-                s = s[:-2]
-            for rm_str in remove_list:
-                s = s.replace(rm_str, "")
-            return s
-        guess = ''.join(c for c in rem_list_from_str(llm_response) if c in mdp.vocab)[-mdp.combination_length:] # just ensure it is 3 characters. also replace ** because sometimes it responds in markdown.
+        guess = process_guess_msg(llm_response, mdp.vocab, mdp.combination_length) # just ensure it is 3 characters. also replace ** because sometimes it responds in markdown.
         if len(guess) != mdp.combination_length or len(set(guess)) != mdp.combination_length:
             # If LLM gives invalid response, make a random valid guess
             print(f"({guess})")
