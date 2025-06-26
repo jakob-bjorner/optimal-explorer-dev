@@ -17,6 +17,7 @@ async def llm_call(
         top_k=0,
         messages=None,
         get_everything=False, # option for getting not just the content, for reasoning logging.
+        reasoning_effort=None,
     ):
     """Send a POST request to OpenRouter API with the provided system and user messages."""
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -38,6 +39,11 @@ async def llm_call(
         "repetition_penalty": repetition_penalty,
         "top_k": top_k,
     }
+
+    if reasoning_effort:
+        payload["reasoning"] = {
+            "effort": reasoning_effort,
+        }
     
     async with aiohttp.ClientSession() as session:
         for attempt in range(10):
