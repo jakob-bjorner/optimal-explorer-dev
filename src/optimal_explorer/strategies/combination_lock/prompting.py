@@ -312,7 +312,7 @@ async def play_single_game(
         
         if done:
             # Save game log before returning
-            save_game_log(game_id, history, reward == 1.0, mdp.target_combination, prompt_style, model)
+            save_game_log(game_id, history, reward == 1.0, mdp.target_combination, prompt_style, model, reasoning_effort=reasoning_effort)
             return reward == 1.0, len(history), regret_per_attempt
 
 async def main(
@@ -375,4 +375,10 @@ if __name__ == "__main__":
     prompt_styles = [3, 4, 5, 6]
     num_games = 100
     
-    asyncio.run(run_all_games())
+    asyncio.run(run_all_games(
+        prompt_styles=prompt_styles, 
+        models=models, 
+        num_games=num_games,
+        reasoning_efforts=reasoning_efforts,
+    ))
+    print("\nAll games completed.")
