@@ -28,7 +28,6 @@ async def llm_call(
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ]
-    
     payload = {
         "model": model,
         "messages": messages,

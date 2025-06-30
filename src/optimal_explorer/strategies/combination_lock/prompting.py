@@ -11,6 +11,8 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from mdps.combination_lock import CombinationLock
 from llm_utils import llm_call
 
+DEBUG = True
+
 def save_game_log(
         game_id: int, 
         history: List[Tuple[str, List[int]]], 
@@ -22,6 +24,8 @@ def save_game_log(
         ):
     """Save game log to a single JSONL file in the logs directory."""
     log_dir = Path(__file__).parent / "logs"
+    if DEBUG:
+        log_dir = Path(__file__).parent / "logs/debug"
     log_dir.mkdir(exist_ok=True)
     
     # Create log entry
@@ -295,13 +299,16 @@ async def play_single_game(
         data['error_handled'] = error_handled
 
         log_dir = Path(__file__).parent / "logs/llm_calls"
+        if DEBUG:
+            log_dir = Path(__file__).parent / "logs/debug/llm_calls"
+            
         log_dir.mkdir(exist_ok=True)
         reasoning_effort_str = reasoning_effort if reasoning_effort else "default"
         log_file = log_dir / f"style{prompt_style}_{model.split('/')[-1]}_{reasoning_effort_str}.jsonl"
         with open(log_file, 'a') as f:
             f.write(json.dumps(data) + '\n')
 
-        print(f'.', end='', flush=True)  # Print a dot for each game to indicate progress
+        print(f'.', end='', flush=True)  # Print a dot for each episode to indicate progress
         # Clean up response to get just the guess
         
         
@@ -327,7 +334,9 @@ async def main(
         ):
     
     log_dir = Path(__file__).parent / "logs"
-    
+    if DEBUG:
+        log_dir = Path(__file__).parent / "logs/debug"
+
     if not reasoning_effort:
         for file in log_dir.rglob(f"style{prompt_style}_*.jsonl"):
             if file.is_file():
@@ -375,9 +384,9 @@ if __name__ == "__main__":
         # 'anthropic/claude-opus-4',
         'deepseek/deepseek-r1-0528',
     ]
-    reasoning_efforts: bool = True
-    prompt_styles = [3, 4, 5, 6]
-    num_games = 100
+    reasoning_efforts: bool = False
+    prompt_styles = [3]
+    num_games = 1
     
     asyncio.run(run_all_games(
         prompt_styles=prompt_styles, 
