@@ -2,7 +2,7 @@ import numpy as np
 import random
 from typing import List, Tuple, Optional, Any
 import itertools
-
+from collections import Counter, defaultdict
 def play_combination_lock_interactive():
     mdp = sample_combination_lock_mdp()
     
@@ -200,12 +200,10 @@ class CombinationLock:
         else:
             reward = 0.0
             done = False
-            
         return self._get_observation(), reward, done, {
             'feedback': feedback,
-            'posterior': self.generate_posterior_str()
+            'posterior': self.generate_posterior_str(),
         }
-    
     def _is_valid_guess(self, guess: str) -> bool:
         """Check if a guess is valid."""
         return (len(guess) == self.combination_length and 
@@ -271,6 +269,22 @@ class CombinationLock:
             return -1.0
         else:
             return (self.max_attempts + 1 - attempt_number)/self.max_attempts
+    def get_trajectory_info(self):
+        """Compute some metrics for logging efficiency over the trajectory in verl and other RL/LLM settings."""
+        repeated_guess_chars_dict = Counter()
+        for guess in self.guess_history:
+            count_of_guess_chars_correct = Counter()
+            for i, (g_i,f_i) in enumerate(zip(guess, self._get_feedback(guess))):
+                if f_i == 2:
+                    count_of_guess_chars_correct[(i, g_i)] += 1
+            repeated_guess_chars_dict.update(count_of_guess_chars_correct) # this adds to all matching tuples.
+
+        repeated_guesses: int = repeated_guess_chars_dict.total() # get total num times the correct char is put in the right place. optimal would be less than 6 I think.
+        return {
+            # we want this to be interpretable, just take the number of times the guess used the same token in the same position.
+            "repeated_guesses": repeated_guesses,
+        }
+    
 def sample_combination_lock_mdp(seed: Optional[int] = None) -> CombinationLock:
     """
     Sample a Combination Lock MDP instance with a random target combination.
