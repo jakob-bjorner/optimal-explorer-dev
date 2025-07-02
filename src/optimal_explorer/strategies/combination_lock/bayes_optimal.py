@@ -138,46 +138,6 @@ class BayesOptimalAgent:
         guess = "".join(untested_chars) + list(set(self.vocab)-self.untested_chars)[:self.combination_length - len(untested_chars)]
         return guess
 
-        # OLD:
-        # Gather characters to fill the empty slots. Prioritize untested characters.
-        # Use existing found_chars (that aren't locked in place) if needed to form a valid guess.
-        chars_for_filling = list(self.untested_chars)
-        random.shuffle(chars_for_filling)
-        
-        known_chars_in_place = {c for c in template if c is not None}
-        other_usable_chars = list(self.found_chars - known_chars_in_place)
-        random.shuffle(other_usable_chars)
-        
-        # Combine lists to ensure we have enough unique characters for a valid guess
-        potential_fillers = chars_for_filling + other_usable_chars
-        
-        fill_idx = 0
-        for i in range(self.combination_length):
-            if template[i] is None:
-                # Find the next unique character to insert
-                while fill_idx < len(potential_fillers) and potential_fillers[fill_idx] in template:
-                    fill_idx += 1
-                if fill_idx < len(potential_fillers):
-                    template[i] = potential_fillers[fill_idx]
-                    fill_idx += 1
-
-        # If we successfully built a full, valid guess, return it
-        if None not in template and len(set(template)) == self.combination_length:
-            guess = "".join(template)
-            if guess not in tried_guesses:
-                return guess
-        
-        # 4. Fallback: If above strategies fail, find any valid, untried combination.
-        # This is a safety net for edge cases.
-        all_possible_guesses = self.all_combinations
-        random.shuffle(all_possible_guesses) # Randomize to avoid getting stuck
-        for g in all_possible_guesses:
-            if g not in tried_guesses:
-                return g
-
-        # Ultimate fallback: Should realistically never be reached if max_attempts is reasonable.
-        return random.choice(self.all_combinations)
-
 
 def save_game_log(game_id: int, history: List[Tuple[str, List[int]]], success: bool, 
                   target: str, belief_sizes: List[int], model: str):
@@ -251,7 +211,6 @@ def main():
     parser.add_argument("--model", type=str, default="bayes_optimal_2", help="Model name (for logging)")
     args = parser.parse_args()
 
-    agent = BayesOptimalAgent(combination_length=args.combination_length, max_attempts=args.max_attempts, vocab=args.vocab)
     num_games = args.num_games
     model = args.model
 

@@ -164,7 +164,6 @@ class CombinationLock:
                         if pos_chars[0] in curr_posterior[p] and p != pos:
                             curr_posterior[p].remove(pos_chars[0])
 
-        
         return curr_posterior
 
     def step(self, action: str) -> Tuple[dict, float, bool, dict]:
