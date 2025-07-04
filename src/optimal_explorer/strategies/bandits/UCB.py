@@ -118,6 +118,15 @@ def main():
 
     results = []
     total_regret = 0.0
+
+    # clear the log file
+    log_file = Path(__file__).parent / "logs" / f"{model}.jsonl"
+    if log_file.exists():
+        log_file.unlink()
+    else:
+        log_file.touch()
+    print(f"Cleared log file: {log_file}")
+
     for game_id in range(num_games):
         agent = UCBAgent(max_steps=args.max_steps, arm_names=args.arm_names.split(","), alpha=args.alpha)
         success, attempts, regret_per_attempt = play_single_game(agent, game_id, model)
