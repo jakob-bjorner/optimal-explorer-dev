@@ -13,6 +13,9 @@ from llm_utils import llm_call
 
 DEBUG = True
 
+
+
+
 def save_game_log(
         game_id: int, 
         history: List[Tuple[str, List[int]]], 
@@ -67,6 +70,16 @@ def get_messages(
         error_handled,
         reasoning_history) -> List[Dict[str, str]]:
     """Get the system prompt based on the prompt style."""
+
+    BASIC_SYSTEM_PROMPT = f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
+1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
+2. Valid characters - You can only use these characters: {list(vocab)}
+3. Each character in your query must be unique (no repeats)
+4. Color feedback after each query:
+   - Green (🟩) - the character is in the combination and in the correct position.
+   - Yellow (🟨) - the character is in the combination but in a different position.
+   - Gray (⬜) - the character does not appear in the combination at all."""
+    
     if prompt_style == 11:
 
         messages = [{"role": "system", 
@@ -91,14 +104,7 @@ def get_messages(
         messages += [{'role': 'user', 'content': user_prompt}]
     elif prompt_style == 12:  # prompt_style == 2
         messages = [{'role': 'system', 
-                 'content':f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
-2. Valid characters - You can only use these characters: {list(vocab)}
-3. Each character in your guess must be unique (no repeats)
-4. Color feedback after each guess:
-   - Green (🟩) - the character is in the combination and in the correct position.
-   - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all.
+                 'content':BASIC_SYSTEM_PROMPT + f"""
 5. Important strategy guidelines:
    - Use your first few guesses to explore different characters and positions
    - Pay attention to character frequency and position patterns
@@ -117,14 +123,7 @@ def get_messages(
     elif prompt_style == 13: # multi turn environment interaction where you document the guess from the model and the full reasoning history
         if messages is None:
             messages = [{"role": "system", 
-                 "content": f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Find the secret {combination_length}-character combination within {max_attempts} attempts.
-2. Valid characters - You can only use these characters: {list(vocab)}
-3. Each character in your query must be unique (no repeats)
-4. Color feedback after each query:
-   - Green (🟩) - the character is in the combination and in the correct position.
-   - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all.
+                 "content": BASIC_SYSTEM_PROMPT + f"""
 5. Respond with ONLY your query as a string of {combination_length} characters, nothing else.
 Your reasoning history so far: {reasoning_history}"""}]
             messages += [{'role': 'user', 'content': f"Make your first query ({mdp.combination_length} characters, all different):"}]
@@ -138,14 +137,7 @@ Your reasoning history so far: {reasoning_history}"""}]
     elif prompt_style == 3: # multi turn environment interaction where you just document the guess from the model
         if messages is None:
             messages = [{"role": "system", 
-                 "content": f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Find the secret {combination_length}-character combination within {max_attempts} attempts.
-2. Valid characters - You can only use these characters: {list(vocab)}
-3. Each character in your query must be unique (no repeats)
-4. Color feedback after each query:
-   - Green (🟩) - the character is in the combination and in the correct position.
-   - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all.
+                 "content": BASIC_SYSTEM_PROMPT + f"""
 5. Respond with ONLY your query as a string of {combination_length} characters, nothing else."""}]
             messages += [{'role': 'user', 'content': f"Make your first query ({mdp.combination_length} characters, all different):"}]
         else:
@@ -159,14 +151,7 @@ Your reasoning history so far: {reasoning_history}"""}]
         instruction_suffix = f"Please format your response as: <Think>Any step-by-step, short and concise thinking to determine what the next query should be</Think><Answer> a {mdp.combination_length} length character code, all different</Answer>. Do not say anything after the <Answer> tags. Do not use markdown. The answer tag should only contain {mdp.combination_length} characters."
         if messages is None:
             messages = [{"role": "system", 
-                         "content": f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
-2. Valid characters - You can only use these characters: {list(vocab)}
-3. Each character in your query must be unique (no repeats)
-4. Color feedback after each query:
-   - Green (🟩) - the character is in the combination and in the correct position.
-   - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all."""}]
+                         "content": BASIC_SYSTEM_PROMPT}]
             messages += [{'role': 'user', 'content': f"Make your first query. " + instruction_suffix}]
         else:
             messages = deepcopy(messages)
@@ -182,14 +167,7 @@ Your reasoning history so far: {reasoning_history}"""}]
 Please format your response as: <Beliefs>Your beliefs on what the answer can be given what you know so far</Beliefs><Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."""
         if messages is None:
             messages = [{"role": "system", 
-                         "content": f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
-2. Valid characters - You can only use these characters: {list(vocab)}
-3. Each character in your query must be unique (no repeats)
-4. Color feedback after each query:
-   - Green (🟩) - the character is in the combination and in the correct position.
-   - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all."""}]
+                         "content": BASIC_SYSTEM_PROMPT}]
             messages += [{'role': 'user', 'content': f"Make your first query. Please format your response as: <Beliefs>Your beliefs on what the answer can be given what you know so far</Beliefs><Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."}]
         else:
             messages = deepcopy(messages)
@@ -206,14 +184,7 @@ Please format your response as: <Beliefs>Your beliefs on what the answer can be 
 Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
         if messages is None:
             messages = [{"role": "system", 
-                         "content": f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
-2. Valid characters - You can only use these characters: {list(vocab)}
-3. Each character in your query must be unique (no repeats)
-4. Color feedback after each query:
-   - Green (🟩) - the character is in the combination and in the correct position.
-   - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all."""}]
+                         "content": BASIC_SYSTEM_PROMPT}]
             messages += [{'role': 'user', 'content': f"Construct a belief state from which you will be able to make a first query. But do not make the query yet. Please format your response as: <Beliefs>Your beliefs on what the answer can be given what you know so far</Beliefs."}]
         else:
             messages = deepcopy(messages)
@@ -224,6 +195,7 @@ Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
                 messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. Here is the feedback for a random other query. {guess} -> {feedback_str}. " + belief_instruction_suffix}]
             else:
                 messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. " + belief_instruction_suffix}]
+
     else:
         raise Exception(f"invalid {prompt_style = }")
     return messages
@@ -438,13 +410,8 @@ if __name__ == "__main__":
         'deepseek/deepseek-r1-0528',
     ]
     reasoning_efforts: bool = False
-<<<<<<< Updated upstream
-    prompt_styles = [3]
-    num_games = 1
-=======
     prompt_styles = [13, 3, 4, 5, 6]
     num_games = 100
->>>>>>> Stashed changes
     
     asyncio.run(run_all_games(
         prompt_styles=prompt_styles, 
