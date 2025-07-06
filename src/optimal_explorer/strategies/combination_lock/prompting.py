@@ -159,7 +159,7 @@ Your reasoning history so far: {reasoning_history}"""}]
             guess, feedback = history[-1]
             feedback_str = ''.join(['⬜' if f == 0 else '🟨' if f == 1 else '🟩' for f in feedback])
             if error_handled:
-                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. Here is the feedback for a random other query. {guess} -> {feedback_str}. Now make your next query. " + instruction_suffix}]
+                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. Now make your next query. " + instruction_suffix}]
             else:
                 messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. Now make your next query. " + instruction_suffix}]
     elif prompt_style == 5: # multi turn environment interaction where you document the belief state and the guess from the model.
@@ -175,10 +175,10 @@ Please format your response as: <Beliefs>Your beliefs on what the answer can be 
             guess, feedback = history[-1]
             feedback_str = ''.join(['⬜' if f == 0 else '🟨' if f == 1 else '🟩' for f in feedback])
             if error_handled:
-                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. Here is the feedback for a random other query. {guess} -> {feedback_str}. " + instruction_suffix}]
+                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. " + instruction_suffix}]
             else:
                 messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. " + instruction_suffix}]
-    elif prompt_style == 6: # multi turn environment interaction where you document the belief state and the guess from the model and you prompt the assistant in seperate steps to get these reasoning tokens.
+    elif prompt_style in (6,7): # multi turn environment interaction where you document the belief state and the guess from the model and you prompt the assistant in seperate steps to get these reasoning tokens.
                             # we will want to aggregate the token counts so that the ploting utility code reflects the total token price. which includes the prompt and the 
         belief_instruction_suffix = """Now update your beliefs about the secret code with the latest feedback. Knowledge in your beliefs must only be updated but can never be discarded, forgotten, or removed. Do not say anything about which information is new and updated or old and remains the same. 
 Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
@@ -192,7 +192,7 @@ Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
             guess, feedback = history[-1]
             feedback_str = ''.join(['⬜' if f == 0 else '🟨' if f == 1 else '🟩' for f in feedback])
             if error_handled:
-                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. Here is the feedback for a random other query. {guess} -> {feedback_str}. " + belief_instruction_suffix}]
+                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. " + belief_instruction_suffix}]
             else:
                 messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. " + belief_instruction_suffix}]
 
@@ -201,7 +201,7 @@ Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
     return messages
 
 async def update_belief(style, messages, model, belief_model_call_store: dict, mdp, ref):
-    if style == 6:
+    if style in (6,7):
         messages = deepcopy(messages)
         data: Dict = await llm_call( # type: ignore
             model=model,
@@ -283,9 +283,14 @@ async def play_single_game(
         # This will need to be slightly different than the typical json object, but I hope I can reuse some of the plotting code...
         attempt += 1
         # Get LLM's guess
+        if prompt_style==7:
+            llm_call_messages = messages[0:1] + messages[-2:] #the basic system prompt, the last belief, and the last instruction (to generate action)
+        else:
+            llm_call_messages = messages
+        import pdb; pdb.set_trace()
         data: Dict = await llm_call( # type: ignore
             model=model,
-            messages=messages,
+            messages=llm_call_messages,
             # system=system_prompt,
             # user=user_prompt,
             temperature=0.1,
@@ -317,9 +322,9 @@ async def play_single_game(
         if len(guess) != mdp.combination_length or len(set(guess)) != mdp.combination_length:
             # If LLM gives invalid response, make a random valid guess
             print(f"({guess})")
-            chars = list(mdp.vocab)
-            random.shuffle(chars)
-            guess = ''.join(chars[:mdp.combination_length])
+            # chars = list(mdp.vocab)
+            # random.shuffle(chars)
+            # guess = ''.join(chars[:mdp.combination_length])
             error_handled = True
         data['error_handled'] = error_handled
 
@@ -336,10 +341,12 @@ async def play_single_game(
         print(f'.', end='', flush=True)  # Print a dot for each episode to indicate progress
         # Clean up response to get just the guess
         
-        
-        # Make the guess
-        obs, reward, done, info = mdp.step(guess)
-        feedback = info['feedback']
+        if error_handled:
+            feedback = "invalid guess"
+        else:
+            # Make the guess
+            obs, reward, done, info = mdp.step(guess)
+            feedback = info['feedback']
         history.append((guess, feedback))
         
         # Calculate regret as shortfall against optimal value function
@@ -403,15 +410,15 @@ async def run_all_games(
 
 if __name__ == "__main__":
     models = [
-        'google/gemini-2.5-pro-preview',
-        'openai/o3',
-        'anthropic/claude-3.5-sonnet',
-        'anthropic/claude-opus-4',
+        # 'google/gemini-2.5-pro-preview',
+        # 'openai/o3',
+        # 'anthropic/claude-3.5-sonnet',
+        # 'anthropic/claude-opus-4',
         'deepseek/deepseek-r1-0528',
     ]
     reasoning_efforts: bool = False
-    prompt_styles = [13, 3, 4, 5, 6]
-    num_games = 100
+    prompt_styles = [7]
+    num_games = 1
     
     asyncio.run(run_all_games(
         prompt_styles=prompt_styles, 
