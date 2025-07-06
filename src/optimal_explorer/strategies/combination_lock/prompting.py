@@ -11,7 +11,10 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from mdps.combination_lock import CombinationLock
 from llm_utils import llm_call
 
-DEBUG = True
+DEBUG = False
+
+
+
 
 def save_game_log(
         game_id: int, 
@@ -55,7 +58,7 @@ def save_game_log(
     with open(log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
 
-def get_messages(
+async def get_messages(
         prompt_style: int, 
         vocab: str, 
         combination_length: int, 
@@ -65,8 +68,21 @@ def get_messages(
         messages, 
         assistant_message_history, 
         error_handled,
-        reasoning_history) -> List[Dict[str, str]]:
+        reasoning_history,
+        belief_model_call_store,
+        llm_call_params,
+        system_prompt) -> List[Dict[str, str]]:
     """Get the system prompt based on the prompt style."""
+
+    BASIC_SYSTEM_PROMPT = f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
+1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} queries, using as few queries as possible.
+2. Valid characters - You can only use these characters: {list(vocab)}
+3. Each character in your query must be unique (no repeats)
+4. Color feedback after each query:
+   - Green (🟩) - the character is in the combination and in the correct position.
+   - Yellow (🟨) - the character is in the combination but in a different position.
+   - Gray (⬜) - the character does not appear in the combination at all."""
+    
     if prompt_style == 11:
 
         messages = [{"role": "system", 
@@ -91,14 +107,7 @@ def get_messages(
         messages += [{'role': 'user', 'content': user_prompt}]
     elif prompt_style == 12:  # prompt_style == 2
         messages = [{'role': 'system', 
-                 'content':f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
-2. Valid characters - You can only use these characters: {list(vocab)}
-3. Each character in your guess must be unique (no repeats)
-4. Color feedback after each guess:
-   - Green (🟩) - the character is in the combination and in the correct position.
-   - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all.
+                 'content':BASIC_SYSTEM_PROMPT + f"""
 5. Important strategy guidelines:
    - Use your first few guesses to explore different characters and positions
    - Pay attention to character frequency and position patterns
@@ -117,14 +126,7 @@ def get_messages(
     elif prompt_style == 13: # multi turn environment interaction where you document the guess from the model and the full reasoning history
         if messages is None:
             messages = [{"role": "system", 
-                 "content": f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Find the secret {combination_length}-character combination within {max_attempts} attempts.
-2. Valid characters - You can only use these characters: {list(vocab)}
-3. Each character in your query must be unique (no repeats)
-4. Color feedback after each query:
-   - Green (🟩) - the character is in the combination and in the correct position.
-   - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all.
+                 "content": BASIC_SYSTEM_PROMPT + f"""
 5. Respond with ONLY your query as a string of {combination_length} characters, nothing else.
 Your reasoning history so far: {reasoning_history}"""}]
             messages += [{'role': 'user', 'content': f"Make your first query ({mdp.combination_length} characters, all different):"}]
@@ -138,14 +140,7 @@ Your reasoning history so far: {reasoning_history}"""}]
     elif prompt_style == 3: # multi turn environment interaction where you just document the guess from the model
         if messages is None:
             messages = [{"role": "system", 
-                 "content": f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Find the secret {combination_length}-character combination within {max_attempts} attempts.
-2. Valid characters - You can only use these characters: {list(vocab)}
-3. Each character in your query must be unique (no repeats)
-4. Color feedback after each query:
-   - Green (🟩) - the character is in the combination and in the correct position.
-   - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all.
+                 "content": BASIC_SYSTEM_PROMPT + f"""
 5. Respond with ONLY your query as a string of {combination_length} characters, nothing else."""}]
             messages += [{'role': 'user', 'content': f"Make your first query ({mdp.combination_length} characters, all different):"}]
         else:
@@ -159,14 +154,7 @@ Your reasoning history so far: {reasoning_history}"""}]
         instruction_suffix = f"Please format your response as: <Think>Any step-by-step, short and concise thinking to determine what the next query should be</Think><Answer> a {mdp.combination_length} length character code, all different</Answer>. Do not say anything after the <Answer> tags. Do not use markdown. The answer tag should only contain {mdp.combination_length} characters."
         if messages is None:
             messages = [{"role": "system", 
-                         "content": f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
-2. Valid characters - You can only use these characters: {list(vocab)}
-3. Each character in your query must be unique (no repeats)
-4. Color feedback after each query:
-   - Green (🟩) - the character is in the combination and in the correct position.
-   - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all."""}]
+                         "content": BASIC_SYSTEM_PROMPT}]
             messages += [{'role': 'user', 'content': f"Make your first query. " + instruction_suffix}]
         else:
             messages = deepcopy(messages)
@@ -174,22 +162,15 @@ Your reasoning history so far: {reasoning_history}"""}]
             guess, feedback = history[-1]
             feedback_str = ''.join(['⬜' if f == 0 else '🟨' if f == 1 else '🟩' for f in feedback])
             if error_handled:
-                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. Here is the feedback for a random other query. {guess} -> {feedback_str}. Now make your next query. " + instruction_suffix}]
+                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. Now choose query {len(history)+1}. " + instruction_suffix}]
             else:
-                messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. Now make your next query. " + instruction_suffix}]
+                messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. Now choose query {len(history)+1}. " + instruction_suffix}]
     elif prompt_style == 5: # multi turn environment interaction where you document the belief state and the guess from the model.
-        instruction_suffix = f"""Now update your beliefs based on the feedback, and use your new beliefs to make your next query. Knowledge in your beliefs must only be updated but can never be discarded, forgotten, or removed. Do not say anything about which information is new and updated or old and remains the same. 
+        instruction_suffix = f"""Now update your beliefs based on the feedback, and use your new beliefs to make choose query {len(history)+1}. Knowledge in your beliefs must only be updated but can never be discarded, forgotten, or removed. Do not say anything about which information is new and updated or old and remains the same. 
 Please format your response as: <Beliefs>Your beliefs on what the answer can be given what you know so far</Beliefs><Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."""
         if messages is None:
             messages = [{"role": "system", 
-                         "content": f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
-2. Valid characters - You can only use these characters: {list(vocab)}
-3. Each character in your query must be unique (no repeats)
-4. Color feedback after each query:
-   - Green (🟩) - the character is in the combination and in the correct position.
-   - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all."""}]
+                         "content": BASIC_SYSTEM_PROMPT}]
             messages += [{'role': 'user', 'content': f"Make your first query. Please format your response as: <Beliefs>Your beliefs on what the answer can be given what you know so far</Beliefs><Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."}]
         else:
             messages = deepcopy(messages)
@@ -197,23 +178,16 @@ Please format your response as: <Beliefs>Your beliefs on what the answer can be 
             guess, feedback = history[-1]
             feedback_str = ''.join(['⬜' if f == 0 else '🟨' if f == 1 else '🟩' for f in feedback])
             if error_handled:
-                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. Here is the feedback for a random other query. {guess} -> {feedback_str}. " + instruction_suffix}]
+                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. " + instruction_suffix}]
             else:
                 messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. " + instruction_suffix}]
-    elif prompt_style == 6: # multi turn environment interaction where you document the belief state and the guess from the model and you prompt the assistant in seperate steps to get these reasoning tokens.
+    elif prompt_style in (6,7): # multi turn environment interaction where you document the belief state and the guess from the model and you prompt the assistant in seperate steps to get these reasoning tokens.
                             # we will want to aggregate the token counts so that the ploting utility code reflects the total token price. which includes the prompt and the 
         belief_instruction_suffix = """Now update your beliefs about the secret code with the latest feedback. Knowledge in your beliefs must only be updated but can never be discarded, forgotten, or removed. Do not say anything about which information is new and updated or old and remains the same. 
 Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
         if messages is None:
             messages = [{"role": "system", 
-                         "content": f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
-2. Valid characters - You can only use these characters: {list(vocab)}
-3. Each character in your query must be unique (no repeats)
-4. Color feedback after each query:
-   - Green (🟩) - the character is in the combination and in the correct position.
-   - Yellow (🟨) - the character is in the combination but in a different position.
-   - Gray (⬜) - the character does not appear in the combination at all."""}]
+                         "content": BASIC_SYSTEM_PROMPT}]
             messages += [{'role': 'user', 'content': f"Construct a belief state from which you will be able to make a first query. But do not make the query yet. Please format your response as: <Beliefs>Your beliefs on what the answer can be given what you know so far</Beliefs."}]
         else:
             messages = deepcopy(messages)
@@ -221,29 +195,131 @@ Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
             guess, feedback = history[-1]
             feedback_str = ''.join(['⬜' if f == 0 else '🟨' if f == 1 else '🟩' for f in feedback])
             if error_handled:
-                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. Here is the feedback for a random other query. {guess} -> {feedback_str}. " + belief_instruction_suffix}]
+                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. " + belief_instruction_suffix}]
             else:
                 messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. " + belief_instruction_suffix}]
+        messages = await update_belief(
+            prompt_style, 
+            messages, 
+            llm_call_params,
+            belief_model_call_store, 
+            mdp,
+            history)
+    elif prompt_style == 17: 
+        if messages is None:
+            messages = [{'role': 'system', 'content': (f"""You are a specialized AI model. Your only function is to solve the "Combo Lock" game by executing the following Two-Phase Algorithmic Protocol. Logical integrity and strict adherence to the protocol are your only directives.
+
+THE RULES:
+
+Secret: 3 unique characters.
+
+Character Set: {list(vocab)}
+
+Feedback: 🟩 (Green), 🟨 (Yellow), ⬜ (Grey).
+
+THE STRATEGIC PROTOCOL (NON-NEGOTIABLE):
+
+You will operate in one of two phases. You must declare your current phase in every turn.
+
+Phase 1: Character Discovery
+
+Objective: To identify the three characters present in the code.
+
+Prime Directive: Your queries MUST prioritize testing new, unused characters. Your goal is maximum coverage of the character set.
+
+Execution Rule: To the greatest extent possible, each query in this phase should contain 3 characters that have never been guessed before.
+
+CRITICAL CAVEAT: Do NOT reuse 🟨 (Yellow) characters during this phase unless you have run out of new characters to test. Focus on eliminating ⬜ (Grey) characters and finding the full set of three present characters.
+
+Phase 2: Permutation Analysis
+
+Trigger Condition: You will enter this phase ONLY when you have positively identified all three correct characters (e.g., your feedback consists of some combination of 3 🟩s and 🟨s).
+
+Objective: To find the correct positions of the three known characters.
+
+Execution Rule: All your queries will now be permutations of the three characters you know are in the combination.
+
+OUTPUT FORMAT:
+
+Turn: [Turn #]
+Current Phase: [Phase 1: Discovery / Phase 2: Analysis]
+
+1. Known Information:
+
+Present (Green/Yellow): [List of characters]
+
+Absent (Grey): [List of characters]
+
+Positional Rules: [e.g., Pos 2 is 'w'; Pos 1 is not 'a']
+
+2. Justification:
+
+Phase 1 Justification: "My priority is discovering the three correct characters. This query, [c1, c2, c3], tests 3 entirely new letters to maximize character set coverage."
+
+Phase 2 Justification: "I have identified the three characters as [x, y, z]. This query is a logical permutation to determine their final positions."
+
+Query:
+['c', 'h', 'a']""")
+                         },
+                         {'role': 'user', 'content': "Let's begin. What is your first query?"}]
+        else:
+            messages = deepcopy(messages)
+            messages += [{"role": "assistant", "content": assistant_message_history[-1]['content']}]
+            guess, feedback = history[-1]
+            feedback_str = ''.join(['⬜' if f == 0 else '🟨' if f == 1 else '🟩' for f in feedback])
+            
+            str_response_feedback = f"Feedback: {list(zip(guess, feedback_str))}."
+            if error_handled:
+                messages += [{'role': "user", 'content': f"Your previous query was unable to be parsed. Ensure you do not repeat characters in your guess, and that the last string in your response is the guess formatted as a python list. Here is the feedback for a random other query {list(guess)}.\n" + str_response_feedback}]
+            else:
+                messages += [{'role': "user", 'content': str_response_feedback }]
+    elif prompt_style == 8:
+        if messages is None:
+            
+            messages = [{'role': 'system', 'content': (system_prompt)
+                         },
+                         {'role': 'user', 'content': "Let's begin. What is your first query?"}]
+        else:
+            messages = deepcopy(messages)
+            messages += [{"role": "assistant", "content": assistant_message_history[-1]['content']}]
+            guess, feedback = history[-1]
+            # feedback_str = ''.join(['⬜' if f == 0 else '🟨' if f == 1 else '🟩' for f in feedback])
+            
+            # str_response_feedback = f"Feedback: {list(zip(guess, feedback_str))}."
+            str_response_feedback = "Feedback:"
+            for i, (g, f) in enumerate(zip(guess, feedback)):
+                position = i + 1
+                if f == 0:
+                    str_response_feedback += f"\n{g} is not in the lock"
+                elif f == 1:
+                    str_response_feedback += f"\n{g} is not in Position {position}, but is in the lock"
+                else: # f == 2
+                    str_response_feedback += f"\n{g} is in Position {position}!"
+            if error_handled:
+                messages += [{'role': "user", 'content': f"Your previous query was unable to be parsed. Ensure you do not repeat characters in your guess, and that the last string in your response is the guess formatted as a python list. Here is the feedback for a random other query {list(guess)}.\n" + str_response_feedback}]
+            else:
+                messages += [{'role': "user", 'content': str_response_feedback }]
+
     else:
         raise Exception(f"invalid {prompt_style = }")
     return messages
 
-async def update_belief(style, messages, model, belief_model_call_store: dict, mdp, ref):
-    if style == 6:
+async def update_belief(style, messages, llm_call_params, belief_model_call_store: dict, mdp, history):
+    if style in (6,7):
         messages = deepcopy(messages)
         data: Dict = await llm_call( # type: ignore
-            model=model,
+            **llm_call_params,
             messages=messages,
             # system=system_prompt,
             # user=user_prompt,
-            temperature=0.1,
-            get_everything=True,
-            reasoning_effort=ref,
+            # temperature=0.1,
+            # get_everything=True,
+            # reasoning_effort=ref,
         )
         print("^", end='', flush=True)
         belief_model_call_store.update(data)
         messages += [{'role': 'assistant', "content": data["choices"][0]["message"]["content"]}]
-        messages += [{'role':"user", 'content': f"Now make your next query based on your current beliefs. Please format your response as: <Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."}]
+        messages += [{'role':"user", 'content': f"Now choose query {len(history)+1} based on your current beliefs. Please format your response as: <Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."}]
 
     return messages
 
@@ -264,13 +340,17 @@ async def play_single_game(
         model: str,
         max_attempts: int,
         vocab: str,
-        reasoning_effort: str = None,  # 'low', 'medium', 'high'
-        ) -> Tuple[bool, int, List[float]]:
+        combination_length: int = 3,
+        reasoning_effort: str|None = None,  # 'low', 'medium', 'high'
+        output_info: str|None = None,
+        url: str|None = None,
+        system_prompt: str|None = None, # this works with prompt 8 for quickly testing different prompts.
+        ):
     """
     Play a single game of combination lock with the LLM.
     Returns (success, num_attempts, regret_per_attempt)
     """
-    mdp = CombinationLock(max_attempts=max_attempts, vocab=vocab)
+    mdp = CombinationLock(combination_length=combination_length, max_attempts=max_attempts, vocab=vocab)
     mdp.reset(seed=game_id)  # Use game_id as seed for reproducibility
     
     # Get system prompt based on style
@@ -285,9 +365,18 @@ async def play_single_game(
     reasoning_history = []
     error_handled = False
 
+    temperature = 0.1 if "qwen3" not in model else 0.7
+    llm_call_params = {
+        "model": model,
+        "temperature": temperature,
+        "reasoning_effort": reasoning_effort,
+        "get_everything": True,
+        "url": url
+    }
     while True:
+        belief_model_call_store = dict()
         
-        messages = get_messages(
+        messages = await get_messages(
             prompt_style, 
             mdp.vocab, 
             mdp.combination_length, 
@@ -298,27 +387,26 @@ async def play_single_game(
             assistant_message_history, 
             error_handled,
             reasoning_history,
+            belief_model_call_store,
+            llm_call_params,
+            system_prompt
             )
-        belief_model_call_store = dict()
-        messages = await update_belief(
-            prompt_style, 
-            messages, 
-            model, 
-            belief_model_call_store, 
-            mdp, 
-            reasoning_effort)
         # if I want to call the model multiple times for one enviornment interaction, then I need to record this somehow within one json object. 
         # This will need to be slightly different than the typical json object, but I hope I can reuse some of the plotting code...
         attempt += 1
         # Get LLM's guess
+        if prompt_style==7:
+            llm_call_messages = messages[0:1] + messages[-2:] #the basic system prompt, the last belief, and the last instruction (to generate action)
+        else:
+            llm_call_messages = messages
         data: Dict = await llm_call( # type: ignore
-            model=model,
-            messages=messages,
+            **llm_call_params,
+            messages=llm_call_messages,
             # system=system_prompt,
             # user=user_prompt,
-            temperature=0.1,
-            get_everything=True,
-            reasoning_effort=reasoning_effort,
+            # temperature=temperature,
+            # get_everything=True,
+            # reasoning_effort=reasoning_effort,
         )
         data['game_id'] = game_id
         data['prompt_style'] = prompt_style
@@ -336,18 +424,18 @@ async def play_single_game(
             data['other_lm_calls'] = [belief_model_call_store]
         error_handled = False
 
-        llm_response = data["choices"][0]["message"]["content"]
+        llm_response = data["choices"][0]["message"]["content"] if 'message' in data['choices'][0] else data['choices'][0]['text']
         # import pdb; pdb.set_trace()
-        reasoning_str = data['choices'][0]['message']['reasoning'] if 'reasoning' in data['choices'][0]['message'] else ''
+        reasoning_str = data['choices'][0]['message']['reasoning'] if 'reasoning' in data['choices'][0].get("message", dict()) else ''
         reasoning_history.append(reasoning_str)
-        assistant_message_history += [data["choices"][0]["message"]]
+        assistant_message_history += [data["choices"][0]["message"] if 'message' in data['choices'][0] else {'role': 'assistant', 'content': data['choices'][0]['text']}]
         guess = process_guess_msg(llm_response, mdp.vocab, mdp.combination_length) # just ensure it is 3 characters. also replace ** because sometimes it responds in markdown.
         if len(guess) != mdp.combination_length or len(set(guess)) != mdp.combination_length:
             # If LLM gives invalid response, make a random valid guess
             print(f"({guess})")
-            chars = list(mdp.vocab)
-            random.shuffle(chars)
-            guess = ''.join(chars[:mdp.combination_length])
+            # chars = list(mdp.vocab)
+            # random.shuffle(chars)
+            # guess = ''.join(chars[:mdp.combination_length])
             error_handled = True
         data['error_handled'] = error_handled
 
@@ -364,10 +452,12 @@ async def play_single_game(
         print(f'.', end='', flush=True)  # Print a dot for each episode to indicate progress
         # Clean up response to get just the guess
         
-        
-        # Make the guess
-        obs, reward, done, info = mdp.step(guess)
-        feedback = info['feedback']
+        if error_handled:
+            feedback = "invalid guess"
+        else:
+            # Make the guess
+            obs, reward, done, info = mdp.step(guess)
+            feedback = info['feedback']
         history.append((guess, feedback))
         
         # Calculate regret as shortfall against optimal value function
@@ -377,6 +467,8 @@ async def play_single_game(
         if done:
             # Save game log before returning
             save_game_log(game_id, history, reward == 1.0, mdp.target_combination, prompt_style, model, reasoning_effort=reasoning_effort)
+            if output_info == "history":
+                return reward == 1.0, len(history), regret_per_attempt, messages, history
             return reward == 1.0, len(history), regret_per_attempt
 
 async def main(
@@ -408,8 +500,8 @@ async def main(
     results = await asyncio.gather(*tasks)
 
 async def run_all_games(
-        prompt_styles: List[int], 
-        models: List[str], 
+        prompt_styles: List[int],
+        models: List[str],
         num_games: int,
         reasoning_efforts: bool,
         ):
@@ -431,20 +523,15 @@ async def run_all_games(
 
 if __name__ == "__main__":
     models = [
-        'google/gemini-2.5-pro-preview',
-        'openai/o3',
-        'anthropic/claude-3.5-sonnet',
-        'anthropic/claude-opus-4',
+        # 'google/gemini-2.5-pro-preview',
+        # 'openai/o3',
+        # 'anthropic/claude-3.5-sonnet',
+        # 'anthropic/claude-opus-4',
         'deepseek/deepseek-r1-0528',
     ]
     reasoning_efforts: bool = False
-<<<<<<< Updated upstream
-    prompt_styles = [3]
+    prompt_styles = [7]
     num_games = 1
-=======
-    prompt_styles = [13, 3, 4, 5, 6]
-    num_games = 100
->>>>>>> Stashed changes
     
     asyncio.run(run_all_games(
         prompt_styles=prompt_styles, 
