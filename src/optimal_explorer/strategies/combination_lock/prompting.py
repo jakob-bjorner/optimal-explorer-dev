@@ -72,7 +72,7 @@ def get_messages(
     """Get the system prompt based on the prompt style."""
 
     BASIC_SYSTEM_PROMPT = f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
+1. Objective - Guess the secret {combination_length}-character combination with as few attempts as possible, within {max_attempts} attempts.
 2. Valid characters - You can only use these characters: {list(vocab)}
 3. Each character in your query must be unique (no repeats)
 4. Color feedback after each query:
@@ -84,7 +84,7 @@ def get_messages(
 
         messages = [{"role": "system", 
                  "content": f"""You are playing a combination lock game. The rules are:
-1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
+1. Objective - Guess the secret {combination_length}-character combination with as few attempts as possible, within {max_attempts} attempts.
 2. Valid characters - You can only use these characters: {list(vocab)}
 3. Each character in your guess must be unique (no repeats)
 4. Color feedback after each guess:
@@ -159,11 +159,11 @@ Your reasoning history so far: {reasoning_history}"""}]
             guess, feedback = history[-1]
             feedback_str = ''.join(['⬜' if f == 0 else '🟨' if f == 1 else '🟩' for f in feedback])
             if error_handled:
-                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. Now make your next query. " + instruction_suffix}]
+                messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. Now choose query {len(history)+1}. " + instruction_suffix}]
             else:
-                messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. Now make your next query. " + instruction_suffix}]
+                messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. Now choose query {len(history)+1}. " + instruction_suffix}]
     elif prompt_style == 5: # multi turn environment interaction where you document the belief state and the guess from the model.
-        instruction_suffix = f"""Now update your beliefs based on the feedback, and use your new beliefs to make your next query. Knowledge in your beliefs must only be updated but can never be discarded, forgotten, or removed. Do not say anything about which information is new and updated or old and remains the same. 
+        instruction_suffix = f"""Now update your beliefs based on the feedback, and use your new beliefs to make choose query {len(history)+1}. Knowledge in your beliefs must only be updated but can never be discarded, forgotten, or removed. Do not say anything about which information is new and updated or old and remains the same. 
 Please format your response as: <Beliefs>Your beliefs on what the answer can be given what you know so far</Beliefs><Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."""
         if messages is None:
             messages = [{"role": "system", 
@@ -200,7 +200,7 @@ Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
         raise Exception(f"invalid {prompt_style = }")
     return messages
 
-async def update_belief(style, messages, model, belief_model_call_store: dict, mdp, ref):
+async def update_belief(style, messages, model, belief_model_call_store: dict, mdp, ref, history):
     if style in (6,7):
         messages = deepcopy(messages)
         data: Dict = await llm_call( # type: ignore
@@ -215,7 +215,7 @@ async def update_belief(style, messages, model, belief_model_call_store: dict, m
         print("^", end='', flush=True)
         belief_model_call_store.update(data)
         messages += [{'role': 'assistant', "content": data["choices"][0]["message"]["content"]}]
-        messages += [{'role':"user", 'content': f"Now make your next query based on your current beliefs. Please format your response as: <Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."}]
+        messages += [{'role':"user", 'content': f"Now choose query {len(history)+1} based on your current beliefs. Please format your response as: <Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."}]
 
     return messages
 
@@ -278,7 +278,9 @@ async def play_single_game(
             model, 
             belief_model_call_store, 
             mdp, 
-            reasoning_effort)
+            reasoning_effort,
+            history,
+            )
         # if I want to call the model multiple times for one enviornment interaction, then I need to record this somehow within one json object. 
         # This will need to be slightly different than the typical json object, but I hope I can reuse some of the plotting code...
         attempt += 1
