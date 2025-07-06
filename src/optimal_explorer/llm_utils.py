@@ -5,8 +5,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def create_prompt_string(messages):
+    prompt_string = ""
+    for message in messages:
+        prompt_string += f"role: {message['role']}\n\n{message['content']}\n\n"
+    return prompt_string + "role: assistant"
+
 async def llm_call(
-        system="You are a helpful assistant", 
+        system="You are a helpful assistant",
         user="What is the color of loneliness?",
         model="anthropic/claude-3.7-sonnet",
         temperature=0.7,
@@ -18,11 +24,10 @@ async def llm_call(
         messages=None,
         get_everything=False, # option for getting not just the content, for reasoning logging.
         reasoning_effort=None,
+        url=None
     ):
     """Send a POST request to OpenRouter API with the provided system and user messages."""
     api_key = os.getenv("OPENROUTER_API_KEY")
-    api_url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}"}
     if messages is None:
         messages = [
             {"role": "system", "content": system},
@@ -30,7 +35,6 @@ async def llm_call(
         ]
     payload = {
         "model": model,
-        "messages": messages,
         "temperature": temperature,
         "top_p": top_p,
         "frequency_penalty": frequency_penalty,
@@ -38,6 +42,26 @@ async def llm_call(
         "repetition_penalty": repetition_penalty,
         "top_k": top_k,
     }
+    if url is None:
+        api_url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}"}
+    else:
+        api_url = url # this to support calling local model for base model testing.
+        headers = None
+        payload['max_tokens'] = 32000
+        payload['top_k'] = -1
+
+    if not model.lower().endswith('base'):
+        payload['messages'] = messages
+    else:
+        api_url = api_url.replace("/chat/completions", "/completions")
+        if user == "What is the color of loneliness?":
+            # some automatic way of converting system, user, and assistant into a single string
+            payload['prompt'] = create_prompt_string(messages)
+        else:
+            payload['prompt'] = user
+        payload['stop'] = ["role:"]
+
 
     if reasoning_effort:
         payload["reasoning"] = {
