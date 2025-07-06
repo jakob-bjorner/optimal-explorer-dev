@@ -11,7 +11,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from mdps.combination_lock import CombinationLock
 from llm_utils import llm_call
 
-DEBUG = True
+DEBUG = False
 
 
 
@@ -72,7 +72,7 @@ def get_messages(
     """Get the system prompt based on the prompt style."""
 
     BASIC_SYSTEM_PROMPT = f"""You are playing a combination lock game with the goal of optimal exploration. The rules are:
-1. Objective - Guess the secret {combination_length}-character combination with as few attempts as possible, within {max_attempts} attempts.
+1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} queries, using as few queries as possible.
 2. Valid characters - You can only use these characters: {list(vocab)}
 3. Each character in your query must be unique (no repeats)
 4. Color feedback after each query:
@@ -84,7 +84,7 @@ def get_messages(
 
         messages = [{"role": "system", 
                  "content": f"""You are playing a combination lock game. The rules are:
-1. Objective - Guess the secret {combination_length}-character combination with as few attempts as possible, within {max_attempts} attempts.
+1. Objective - Guess the secret {combination_length}-character combination within {max_attempts} attempts.
 2. Valid characters - You can only use these characters: {list(vocab)}
 3. Each character in your guess must be unique (no repeats)
 4. Color feedback after each guess:
@@ -289,7 +289,6 @@ async def play_single_game(
             llm_call_messages = messages[0:1] + messages[-2:] #the basic system prompt, the last belief, and the last instruction (to generate action)
         else:
             llm_call_messages = messages
-        import pdb; pdb.set_trace()
         data: Dict = await llm_call( # type: ignore
             model=model,
             messages=llm_call_messages,
