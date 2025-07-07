@@ -125,7 +125,7 @@ class BanditBestArmSelection:
             'max_steps': self.max_steps,
             'history': list(self.history),
             'arm_names': list(self.arm_names),
-            'final_answer': self.final_answer
+            'final_answer': self.final_answer,
         }
 
     def render(self) -> None:
@@ -166,3 +166,137 @@ def sample_bandit_best_arm_selection_env(seed: Optional[int] = None) -> BanditBe
     env = BanditBestArmSelection(seed=seed)
     env.reset(seed)
     return env
+
+class MultiArmedBandits:
+    def __init__(
+        self,
+        arm_names: Optional[List[str]] = None,
+        num_arms: int = 5,
+        max_steps: int = 50,
+        reward_type: str = 'gaussian',  # 'gaussian' or 'bernoulli'
+        noise_level: str = 'low',       # 'low', 'medium', 'high'
+        scenario_description: Optional[str] = None,
+        seed: Optional[int] = None
+    ):
+        """
+        Initialize the Multi-Armed Bandit environment.
+        Args:
+            arm_names: List of arm names (default: numeric labels)
+            num_arms: Number of arms (default: 5)
+            max_steps: Number of interaction steps per episode (default: 50)
+            reward_type: 'gaussian' or 'bernoulli'
+            noise_level: 'low', 'medium', or 'high' (affects Gaussian sigma)
+            scenario_description: Optional textual description of the scenario
+            seed: Random seed for reproducibility
+        """
+        if arm_names is None:
+            arm_names = [str(i) for i in range(num_arms)]
+        self.arm_names = arm_names
+        self.k = len(arm_names)
+        self.max_steps = max_steps
+        self.reward_type = reward_type.lower()
+        self.noise_level = noise_level.lower()
+        self.scenario_description = scenario_description or self._default_description()
+        self.current_step = 0
+        self.done = False
+        self.arm_means = None
+        self.arm_sigmas = None
+        self.history = []  # List of (arm, reward)
+        self._rng = np.random.RandomState(seed)
+
+        self.reset(seed)
+
+    def _default_description(self):
+        return (
+            f"You are a bandit algorithm and interact with {self.k} arms labeled {', '.join(self.arm_names)}. "
+            f"Each arm is associated with a {self.reward_type.capitalize()} distribution with a fixed but unknown mean; "
+            f"the means for the arms could be different. For either arm, when you use it, you will get a reward that is "
+            f"sampled from the arm's associated distribution. You have {self.max_steps} time steps and, on each time step, "
+            f"you MUST choose one of the arms and receive the reward. Your goal is to maximize the total reward."
+        )
+
+    def _get_sigma(self):
+        if self.reward_type == 'gaussian':
+            if self.noise_level == 'low':
+                return 0.1
+            elif self.noise_level == 'medium':
+                return 1.0
+            elif self.noise_level == 'high':
+                return 3.0
+            else:
+                raise ValueError(f"Unknown noise level: {self.noise_level}")
+        return None
+
+    def _sample_arm_means(self):
+        if self.reward_type == 'gaussian':
+            means = self._rng.uniform(0, 1, self.k)
+            sigma = self._get_sigma()
+            sigmas = np.full(self.k, sigma)
+            return means, sigmas
+        elif self.reward_type == 'bernoulli':
+            means = self._rng.uniform(0, 1, self.k)
+            return means, None
+        else:
+            raise ValueError(f"Unknown reward type: {self.reward_type}")
+
+    def reset(self, seed: Optional[int] = None) -> Dict[str, Any]:
+        if seed is not None:
+            self._rng = np.random.RandomState(seed)
+        self.arm_means, self.arm_sigmas = self._sample_arm_means()
+        self.current_step = 0
+        self.done = False
+        self.history = []
+        return self._get_observation()
+
+    def _is_valid_arm(self, arm: str) -> bool:
+        return arm in self.arm_names
+
+    def step(self, action: str) -> Tuple[Dict[str, Any], float, bool, Dict[str, Any]]:
+        if self.done:
+            raise Exception("Episode already terminated.")
+        if not self._is_valid_arm(action):
+            return self._get_observation(), -1.0, True, {'error': 'Invalid arm'}
+        arm_idx = self.arm_names.index(action)
+        if self.reward_type == 'gaussian':
+            mu = self.arm_means[arm_idx]
+            sigma = self.arm_sigmas[arm_idx]
+            reward = self._rng.normal(mu, sigma)
+        elif self.reward_type == 'bernoulli':
+            mu = self.arm_means[arm_idx]
+            reward = int(self._rng.rand() < mu)
+        else:
+            raise ValueError(f"Unknown reward type: {self.reward_type}")
+        self.history.append((action, reward))
+        self.current_step += 1
+        obs = self._get_observation()
+        done = self.current_step >= self.max_steps
+        self.done = done
+        info = {'reward': reward}
+        return obs, reward, done, info
+
+    def _get_observation(self) -> Dict[str, Any]:
+        return {
+            'current_step': self.current_step,
+            'max_steps': self.max_steps,
+            'history': list(self.history),
+            'arm_names': list(self.arm_names),
+        }
+
+    def render(self) -> None:
+        print(f"\nArms: {', '.join(self.arm_names)}", flush=True)
+        print(f"Current step: {self.current_step}/{self.max_steps}", flush=True)
+        for i, (arm, reward) in enumerate(self.history):
+            print(f"Step {i+1}: {arm} -> reward {reward}", flush=True)
+
+    def get_trajectory_score(self) -> float:
+        # Total reward accumulated
+        return float(sum(r for _, r in self.history))
+
+    def get_trajectory_info(self):
+        arm_counts = {arm: 0 for arm in self.arm_names}
+        for arm, _ in self.history:
+            arm_counts[arm] += 1
+        return {
+            'arm_counts': arm_counts,
+            'total_reward': self.get_trajectory_score(),
+        }
