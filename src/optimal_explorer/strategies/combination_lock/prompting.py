@@ -11,8 +11,8 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from mdps.combination_lock import CombinationLock
 from llm_utils import llm_call
 
-DEBUG = False
-
+DEBUG = True
+run_name = '_dontreconstruct'
 
 
 
@@ -55,7 +55,7 @@ def save_game_log(
     
     # Append to JSONL file
     reasoning_effort_str = reasoning_effort if reasoning_effort else "default"
-    log_file = log_dir / f"game_results/style{prompt_style}_{reasoning_effort_str}.jsonl"
+    log_file = log_dir / f"game_results/style{prompt_style}_{reasoning_effort_str}{run_name}.jsonl"
     with open(log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
 
@@ -318,7 +318,7 @@ async def update_belief(style, messages, llm_call_params, belief_model_call_stor
         print("^", end='', flush=True)
         belief_model_call_store.update(data)
         messages += [{'role': 'assistant', "content": data["choices"][0]["message"]["content"]}]
-        messages += [{'role':"user", 'content': f"Now choose query {len(history)+1} based on your current beliefs. Please format your response as: <Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."}]
+        messages += [{'role':"user", 'content': f"Now choose query {len(history)+1} based on only your current beliefs. Do not reconstruct or reason about previous queries or feedback. Please format your response as: <Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."}]
 
     return messages
 
@@ -445,7 +445,7 @@ async def play_single_game(
             
         log_dir.mkdir(exist_ok=True)
         reasoning_effort_str = reasoning_effort if reasoning_effort else "default"
-        log_file = log_dir / f"style{prompt_style}_{model.split('/')[-1]}_{reasoning_effort_str}.jsonl"
+        log_file = log_dir / f"style{prompt_style}_{model.split('/')[-1]}_{reasoning_effort_str}{run_name}.jsonl"
         with open(log_file, 'a') as f:
             f.write(json.dumps(data) + '\n')
 
@@ -484,7 +484,7 @@ async def main(
         log_dir = Path(__file__).parent / "logs/debug"
 
     if not reasoning_effort:
-        for file in log_dir.rglob(f"style{prompt_style}_*.jsonl"):
+        for file in log_dir.rglob(f"style{prompt_style}_*{run_name}.jsonl"):
             if file.is_file():
                 file.unlink()
         print(f"Deleted existing log files for style {prompt_style} in {log_dir}")
