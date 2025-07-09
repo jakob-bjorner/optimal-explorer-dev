@@ -24,10 +24,11 @@ def save_game_log(
         prompt_style: int,
         model: str,
         reasoning_effort: str,
+        debug: bool
         ):
     """Save game log to a single JSONL file in the logs directory."""
     log_dir = Path(__file__).parent / "logs"
-    if DEBUG:
+    if debug:
         log_dir = Path(__file__).parent / "logs/debug"
     log_dir.mkdir(exist_ok=True)
     
@@ -186,7 +187,7 @@ Please format your response as: <Beliefs>Your beliefs on what the answer can be 
         belief_instruction_suffix = """Now update your beliefs about the secret code with the latest feedback. Knowledge in your beliefs must only be updated but can never be discarded, forgotten, or removed. Do not say anything about which information is new and updated or old and remains the same. 
 Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
         if messages is None:
-            messages = [{"role": "system", 
+            messages = [{"role": "system",
                          "content": BASIC_SYSTEM_PROMPT}]
             messages += [{'role': 'user', 'content': f"Construct a belief state from which you will be able to make a first query. But do not make the query yet. Please format your response as: <Beliefs>Your beliefs on what the answer can be given what you know so far</Beliefs."}]
         else:
@@ -275,10 +276,8 @@ Query:
                 messages += [{'role': "user", 'content': str_response_feedback }]
     elif prompt_style == 8:
         if messages is None:
-            
-            messages = [{'role': 'system', 'content': (system_prompt)
-                         },
-                         {'role': 'user', 'content': "Let's begin. What is your first query?"}]
+            messages = [{'role': 'system', 'content': (system_prompt)},
+                        {'role': 'user', 'content': "Let's begin. What is your first query?"}]
         else:
             messages = deepcopy(messages)
             messages += [{"role": "assistant", "content": assistant_message_history[-1]['content']}]
@@ -345,6 +344,7 @@ async def play_single_game(
         output_info: str|None = None,
         url: str|None = None,
         system_prompt: str|None = None, # this works with prompt 8 for quickly testing different prompts.
+        debug: bool = False,
         ):
     """
     Play a single game of combination lock with the LLM.
@@ -440,7 +440,7 @@ async def play_single_game(
         data['error_handled'] = error_handled
 
         log_dir = Path(__file__).parent / "logs/llm_calls"
-        if DEBUG:
+        if debug:
             log_dir = Path(__file__).parent / "logs/debug/llm_calls"
             
         log_dir.mkdir(exist_ok=True)
@@ -466,7 +466,7 @@ async def play_single_game(
         
         if done:
             # Save game log before returning
-            save_game_log(game_id, history, reward == 1.0, mdp.target_combination, prompt_style, model, reasoning_effort=reasoning_effort)
+            save_game_log(game_id, history, reward == 1.0, mdp.target_combination, prompt_style, model, reasoning_effort=reasoning_effort, debug=debug)
             if output_info == "history":
                 return reward == 1.0, len(history), regret_per_attempt, messages, history
             return reward == 1.0, len(history), regret_per_attempt
@@ -477,6 +477,7 @@ async def main(
         num_games = 10,
         reasoning_effort: str = None,  # 'low', 'medium', 'high'
         ):
+    DEBUG=False
     
     log_dir = Path(__file__).parent / "logs"
     if DEBUG:
@@ -496,6 +497,7 @@ async def main(
             max_attempts=12,
             vocab='!@#$%^&*pqrs5678',
             reasoning_effort=reasoning_effort,
+            debug=DEBUG,
             ) for i in range(num_games)]
     results = await asyncio.gather(*tasks)
 
