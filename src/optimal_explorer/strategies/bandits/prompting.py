@@ -136,33 +136,49 @@ async def get_messages(
             else:
                 messages += [{"role": "user", "content": f"{action} -> reward {reward:.3f}. Now choose arm {len(history)+1}. " + instruction_suffix}]
     elif prompt_style == 5:
-        # Multi-turn, document the belief state and the action
-        instruction_suffix = f"""Now update your beliefs based on the observed rewards, and use your new beliefs to choose arm {len(history)+1}. Knowledge in your beliefs must only be updated but can never be discarded, forgotten, or removed. Do not say anything about which information is new and updated or old and remains the same.\nPlease format your response as: <Beliefs>Your beliefs on the reward distribution for each arm so far, in the format: {{'arm_name': {{'count': int, 'mean_reward': float}}, ...}}</Beliefs><Action>arm_name</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain the arm name. """
+        # Multi-turn, document the belief state and the action, but only pass the belief state (not the history)
+        instruction_suffix = f"""Now update your beliefs based on the observed reward, and use your new beliefs to choose the next arm. Do not say anything about which information is new and updated or old and remains the same.\nPlease format your response as: <Beliefs>Your beliefs on the reward distribution for each arm so far, in the format: {{'arm_name': {{'count': int, 'mean_reward': float}}, ...}}</Beliefs><Action>arm_name</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain the arm name. """
         if messages is None:
             messages = [{"role": "system", "content": BASIC_SYSTEM_PROMPT}]
-            messages += [{"role": "user", "content": f"Pick your first arm. Please format your response as: <Beliefs>Your beliefs on the reward distribution for each arm so far, in the format: {{'arm_name': {{'count': int, 'mean_reward': float}}, ...}}</Beliefs><Action>arm_name</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain the arm name."}]
+            messages += [{"role": "user", "content": f"Start with your initial beliefs. Please format your response as: <Beliefs>Your beliefs on the reward distribution for each arm so far, in the format: {{'arm_name': {{'count': int, 'mean_reward': float}}, ...}}</Beliefs><Action>arm_name</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain the arm name."}]
         else:
             messages = deepcopy(messages)
-            messages += [{"role": "assistant", "content": assistant_message_history[-1]['content']}]
-            action, reward = history[-1]
+            # Only pass the last belief state to the LLM
+            last_belief = None
+            if assistant_message_history:
+                import re
+                match = re.search(r'<beliefs>(.*?)</beliefs>', assistant_message_history[-1]['content'], re.IGNORECASE | re.DOTALL)
+                if match:
+                    last_belief = match.group(1)
+                else:
+                    last_belief = assistant_message_history[-1]['content']
             if error_handled:
-                messages += [{"role": "user", "content": f"Your previous action was unable to be parsed. " + instruction_suffix}]
+                messages += [{"role": "user", "content": f"Your previous action was unable to be parsed. Here are your current beliefs: <Beliefs>{last_belief}</Beliefs>. {instruction_suffix}"}]
             else:
-                messages += [{"role": "user", "content": f"{action} -> reward {reward:.3f}. " + instruction_suffix}]
+                # Only pass the belief, not the action/reward history
+                messages += [{"role": "user", "content": f"Here are your current beliefs: <Beliefs>{last_belief}</Beliefs>. {instruction_suffix}"}]
     elif prompt_style in (6, 7):
-        # Multi-turn, belief and action in separate steps
-        belief_instruction_suffix = """Now update your beliefs about the reward distribution for each arm with the latest reward. Knowledge in your beliefs must only be updated but can never be discarded, forgotten, or removed. Do not say anything about which information is new and updated or old and remains the same.\nPlease format your response as: <Beliefs>Your new beliefs in the format: {'arm_name': {'count': int, 'mean_reward': float}, ...}</Beliefs>"""
+        # Multi-turn, belief and action in separate steps, only pass belief state (and latest reward for belief update)
+        belief_instruction_suffix = """Now update your beliefs about the reward distribution for each arm with the latest reward. Do not say anything about which information is new and updated or old and remains the same.\nPlease format your response as: <Beliefs>Your new beliefs in the format: {'arm_name': {'count': int, 'mean_reward': float}, ...}</Beliefs>"""
         if messages is None:
             messages = [{"role": "system", "content": BASIC_SYSTEM_PROMPT}]
             messages += [{"role": "user", "content": f"Construct a belief state from which you will be able to choose your first arm. But do not choose yet. Please format your response as: <Beliefs>Your beliefs on the reward distribution for each arm so far, in the format: {{'arm_name': {{'count': int, 'mean_reward': float}}, ...}}</Beliefs>."}]
         else:
             messages = deepcopy(messages)
-            messages += [{"role": "assistant", "content": assistant_message_history[-1]['content']}]
+            # Only pass the last belief state and latest reward for belief update
+            last_belief = None
+            if assistant_message_history:
+                import re
+                match = re.search(r'<beliefs>(.*?)</beliefs>', assistant_message_history[-1]['content'], re.IGNORECASE | re.DOTALL)
+                if match:
+                    last_belief = match.group(1)
+                else:
+                    last_belief = assistant_message_history[-1]['content']
             action, reward = history[-1]
             if error_handled:
-                messages += [{"role": "user", "content": f"Your previous action was unable to be parsed. " + belief_instruction_suffix}]
+                messages += [{"role": "user", "content": f"Your previous action was unable to be parsed. Here are your current beliefs: <Beliefs>{last_belief}</Beliefs>. {belief_instruction_suffix}"}]
             else:
-                messages += [{"role": "user", "content": f"{action} -> reward {reward:.3f}. " + belief_instruction_suffix}]
+                messages += [{"role": "user", "content": f"Here are your current beliefs: <Beliefs>{last_belief}</Beliefs>. The latest reward is {reward:.3f}. {belief_instruction_suffix}"}]
         messages = await update_belief(
             prompt_style,
             messages,
@@ -387,13 +403,13 @@ async def run_all_games(
 
 if __name__ == "__main__":
     models = [
-        'google/gemini-2.5-pro',
-        'deepseek/deepseek-r1-0528',
-        # 'openai/gpt-4.1-nano'
+        # 'google/gemini-2.5-pro',
+        # 'deepseek/deepseek-r1-0528',
+        'openai/gpt-4.1-nano'
     ]
     reasoning_efforts: bool = False
     prompt_styles = [3, 5, 6]
-    num_games = 50
+    num_games = 1
     env_config = {
         'arm_names': ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
         'num_arms': 10,
