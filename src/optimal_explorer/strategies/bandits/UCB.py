@@ -91,7 +91,7 @@ def save_game_log(game_id: int, history: List[Tuple[str, float]], total_reward: 
             for i, (a, reward) in enumerate(history)
         ]
     }
-    log_file = log_dir / f"{model}.jsonl"
+    log_file = log_dir / f"{model}_{env_config.get('reward_type', 'bernoulli')}.jsonl"
     with open(log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
 
@@ -135,7 +135,7 @@ def run_agent(agent_class, model_name, num_games, arm_names, env_config, alpha=N
     all_regret_per_attempt = []
 
     # clear the log file
-    log_file = Path(__file__).parent / "logs" / f"{model_name}.jsonl"
+    log_file = Path(__file__).parent / "logs" / f"{model_name}_{env_config.get('reward_type', 'bernoulli')}.jsonl"
     if log_file.exists():
         log_file.unlink()
     else:
@@ -176,11 +176,11 @@ def run_agent(agent_class, model_name, num_games, arm_names, env_config, alpha=N
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--max_steps", type=int, default=50, help="Arm pull budget")
-    parser.add_argument("--num_arms", type=int, default=5, help="Number of arms")
+    parser.add_argument("--num_arms", type=int, default=10, help="Number of arms")
     parser.add_argument("--arm_names", type=str, default=None, help="Arm names (comma-separated, default: 0,1,...)")
-    parser.add_argument("--reward_type", type=str, default="gaussian", help="Reward type: gaussian or bernoulli")
+    parser.add_argument("--reward_type", type=str, default="bernoulli", help="Reward type: gaussian or bernoulli")
     parser.add_argument("--noise_level", type=str, default="medium", help="Noise level: low, medium, high")
-    parser.add_argument("--num_games", type=int, default=100, help="Number of games to play")
+    parser.add_argument("--num_games", type=int, default=50, help="Number of games to play")
     parser.add_argument("--model", type=str, default="ucb_mab", help="Model name (for logging)")
     parser.add_argument("--alpha", type=float, default=1.0, help="Exploration-exploitation tradeoff parameter")
     args = parser.parse_args()
@@ -190,7 +190,7 @@ def main():
     if args.arm_names is not None:
         arm_names = args.arm_names.split(",")
     else:
-        arm_names = [str(i) for i in range(args.num_arms)]
+        arm_names = [str(i+1) for i in range(args.num_arms)]
 
     env_config = {
         'arm_names': arm_names,
