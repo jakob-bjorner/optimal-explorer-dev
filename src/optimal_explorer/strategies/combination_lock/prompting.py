@@ -6,6 +6,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 from copy import deepcopy
+import re
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from mdps.combination_lock import CombinationLock
@@ -31,7 +32,7 @@ def save_game_log(
     if debug:
         log_dir = Path(__file__).parent / "logs/debug"
     log_dir.mkdir(exist_ok=True)
-    
+
     # Create log entry
     log_entry = {
         "game_id": game_id,
@@ -52,7 +53,7 @@ def save_game_log(
             for i, (guess, feedback) in enumerate(history)
         ]
     }
-    
+
     # Append to JSONL file
     reasoning_effort_str = reasoning_effort if reasoning_effort else "default"
     log_file = log_dir / f"game_results/style{prompt_style}_{reasoning_effort_str}{run_name}.jsonl"
@@ -65,7 +66,7 @@ async def get_messages(
         combination_length: int, 
         max_attempts: int, 
         history, 
-        mdp, 
+        mdp: CombinationLock, 
         messages, 
         assistant_message_history, 
         error_handled,
@@ -182,7 +183,7 @@ Please format your response as: <Beliefs>Your beliefs on what the answer can be 
                 messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. " + instruction_suffix}]
             else:
                 messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. " + instruction_suffix}]
-    elif prompt_style in (6,7): # multi turn environment interaction where you document the belief state and the guess from the model and you prompt the assistant in seperate steps to get these reasoning tokens.
+    elif prompt_style in (6,7,): # multi turn environment interaction where you document the belief state and the guess from the model and you prompt the assistant in seperate steps to get these reasoning tokens.
                             # we will want to aggregate the token counts so that the ploting utility code reflects the total token price. which includes the prompt and the 
         belief_instruction_suffix = """Now update your beliefs about the secret code with the latest feedback. Knowledge in your beliefs must only be updated but can never be discarded, forgotten, or removed. Do not say anything about which information is new and updated or old and remains the same. 
 Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
@@ -199,13 +200,14 @@ Please format your response as: <Beliefs>Your new beliefs</Beliefs>"""
                 messages += [{'role':"user", 'content': f"Your previous query was unable to be parsed. " + belief_instruction_suffix}]
             else:
                 messages += [{'role':"user", 'content': f"{guess} -> {feedback_str}. " + belief_instruction_suffix}]
-        messages = await update_belief(
-            prompt_style, 
-            messages, 
-            llm_call_params,
-            belief_model_call_store, 
-            mdp,
-            history)
+        data: Dict = await llm_call( # type: ignore
+            **llm_call_params,
+            messages=messages,
+        )
+        print("^", end='', flush=True)
+        belief_model_call_store.update(data)
+        messages += [{'role': 'assistant', "content": data["choices"][0]["message"]["content"]}]
+        messages += [{'role':"user", 'content': f"Now choose query {len(history)+1} based on only your current beliefs. Do not reconstruct or reason about previous queries or feedback. Please format your response as: <Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."}]
     elif prompt_style == 17: 
         if messages is None:
             messages = [{'role': 'system', 'content': (f"""You are a specialized AI model. Your only function is to solve the "Combo Lock" game by executing the following Two-Phase Algorithmic Protocol. Logical integrity and strict adherence to the protocol are your only directives.
@@ -298,29 +300,75 @@ Query:
                 messages += [{'role': "user", 'content': f"Your previous query was unable to be parsed. Ensure you do not repeat characters in your guess, and that the last string in your response is the guess formatted as a python list. Here is the feedback for a random other query {list(guess)}.\n" + str_response_feedback}]
             else:
                 messages += [{'role': "user", 'content': str_response_feedback }]
+    elif prompt_style == 9:
+        if messages is None:
+            messages = [{'role': 'system', 'content': f"""Your Goal: Determine the combination for [Position 1, Position 2, Position 3] in a 3-character combination lock.
+The Lock: Requires a 3-character combination. All 3 characters are unique.
+The set of valid characters are as follows: {list(vocab)}
+You get feedback on the presence of a character. Either not in the lock, in the lock but in a different position, or in the lock and in the right position.
+You have {max_attempts} queries.
+Your goal is to minimize the expected number of queries in the average case to query the correct combination.
+When you've tested the correct lock, you will be rewarded!
+Submit a query by responding to the user. Ensure your queries are formatted as a python list, which should be the last thing in your response (e.g. ['char 1', 'char 2', 'char 3'])."""},
+                        {'role': 'user', 'content': "Let's begin. What is your first query?"}]
+
+        else:
+            if messages[-1]['content'].startswith("Let's begin. What is your first query?"):
+                # making sure the model's first query is treated differently. ie fed correct first belief state.
+                belief_state_from_prior_model_call = "Absent=[]\nKnown Positions=[None, None, None]\n" + "\n".join(f"Present and may be at position {k}=[]" for k in range(1, 1+mdp.combination_length))
+            else:
+                belief_state_from_prior_model_call = "Absent" + messages[-1]['content'].strip().split("Absent")[-1]
+            messages = deepcopy([messages[0]])
+            guess, feedback = history[-1]
+            str_response_feedback = "Feedback:"
+            for i, (g, f) in enumerate(zip(guess, feedback)):
+                position = i + 1
+                if f == 0:
+                    str_response_feedback += f"\n{g} is not in the lock"
+                elif f == 1:
+                    str_response_feedback += f"\n{g} is not in Position {position}, but is in the lock"
+                else: # f == 2
+                    str_response_feedback += f"\n{g} is in Position {position}!"
+            if error_handled: 
+                # what the hell does error_handled mean again? how would I make sure that the model gets queried the correct way again, and that this error doesn't propogate to the metrics? should I just throw it out??
+                messages += [{'role': "user", 'content': f"Your previous query was unable to be parsed."}]
+            else:
+                present_position_string_template = "\n".join(f"Present and may be at position {k}=[<confirmed present, and potentially in position {k}.>]" for k in range(1, 1+mdp.combination_length))
+                messages += [{"role": "assistant", "content": f"""You have been playing for {mdp.current_attempt} turn(s). To conserve context, your feedback is being summarized. From this prior belief state, and previous enviornment interaction, construct a new belief state, where the belief state follows the format:
+Absent=[<characters which are absent from the correct combination>]
+Known Positions=[None,None,None] <replace none with known characters>
+{present_position_string_template}
+
+Prior belief state:
+{belief_state_from_prior_model_call}
+
+Recent action:
+{list(guess)}
+
+{str_response_feedback}
+
+Ensure the last thing in your response is your new belief state"""}]
+            data: Dict = await llm_call( # type: ignore
+                **llm_call_params,
+                messages=messages,
+            )
+            print("^", end='', flush=True)
+            data['messages'] = messages
+            data['belief_state_from_prior_model_call'] = belief_state_from_prior_model_call
+            data['guess'] = guess
+            data['feedback'] = feedback
+            belief_model_call_store.update(data)
+            belief_state = "Absent" + data["choices"][0]["message"]["content"].strip().split("Absent")[-1]
+            messages = deepcopy([messages[0]])
+            messages += [{'role': 'user', "content": f"""This is turn {mdp.current_attempt}. To conserve context, your feedback is being summarized. From this belief state, make a query, who's feedback in expectation will minimize the number of queries to get the correct combination.
+Belief state:
+{belief_state}""" }]
 
     else:
         raise Exception(f"invalid {prompt_style = }")
     return messages
 
-async def update_belief(style, messages, llm_call_params, belief_model_call_store: dict, mdp, history):
-    if style in (6,7):
-        messages = deepcopy(messages)
-        data: Dict = await llm_call( # type: ignore
-            **llm_call_params,
-            messages=messages,
-            # system=system_prompt,
-            # user=user_prompt,
-            # temperature=0.1,
-            # get_everything=True,
-            # reasoning_effort=ref,
-        )
-        print("^", end='', flush=True)
-        belief_model_call_store.update(data)
-        messages += [{'role': 'assistant', "content": data["choices"][0]["message"]["content"]}]
-        messages += [{'role':"user", 'content': f"Now choose query {len(history)+1} based on only your current beliefs. Do not reconstruct or reason about previous queries or feedback. Please format your response as: <Action> a {mdp.combination_length} length character code, all different</Action>. Do not say anything after the <Action> tags. Do not use markdown. The action tag should only contain {mdp.combination_length} characters."}]
 
-    return messages
 
 def process_guess_msg(msg_str, vocab, combination_length):
     remove_list = ["**", "</Answer>", "</answer>", "<Answer>", "<answer>", "</Ans>", "</ans>", "<Ans>", "<ans>","<Action>","</Action>","<action>","</action>"]

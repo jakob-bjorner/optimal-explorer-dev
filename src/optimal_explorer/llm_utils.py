@@ -42,7 +42,13 @@ async def llm_call(
         "repetition_penalty": repetition_penalty,
         "top_k": top_k,
     }
-    if url is None:
+    if "openai/o3" in model:
+        api_url = "https://api.openai.com/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}","Content-Type": "application/json",}
+        payload = {
+            "model": 'o3',
+        }
+    elif url is None:
         api_url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}"}
     else:
