@@ -8,6 +8,15 @@ from datetime import datetime
 from copy import deepcopy
 import re
 
+# belief -> action (maintain metrics on belief state accuracy)
+# 
+
+# 1. realize that using beliefs is the way to go
+# 2. figure out what the beliefs should be (format, values)
+# 3. update them based on feedback
+
+
+
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from mdps.combination_lock import CombinationLock
 from llm_utils import llm_call
@@ -85,7 +94,7 @@ async def get_messages(
    - Yellow (🟨) - the character is in the combination but in a different position.
    - Gray (⬜) - the character does not appear in the combination at all."""
     
-    if prompt_style == 11:
+    if prompt_style == 11: # prompt style == 1
 
         messages = [{"role": "system", 
                  "content": f"""You are playing a combination lock game. The rules are:
