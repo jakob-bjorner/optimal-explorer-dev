@@ -7,7 +7,7 @@ MODEL_MAX_LENGTH=20000
 
 # Pick whichever task to run inference on
 # Can have values between 0 and 9
-TASK_NUM=4
+TASK_NUM=2
 
 # Name of the task groups
 GAME_ENVS=(
@@ -53,7 +53,7 @@ JUDGES=(
 
 GAME_ENV=${GAME_ENVS[${TASK_NUM}]}
 ENV=${ENVS[${TASK_NUM}]}
-JUDGE=${JUDGES}
+JUDGE=${JUDGES[${TASK_NUM}]}
 
 
 # which split of the data to use

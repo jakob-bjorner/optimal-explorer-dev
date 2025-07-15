@@ -88,7 +88,7 @@ class GameSimulator:
         self.env.soft_reset()
         self.judge.soft_reset()
 
-    def run_judge_verification(
+    async def run_judge_verification(
         self,
         judge_prompt: Optional[str],
         verifier_input_generator: Optional[Callable],
@@ -188,20 +188,29 @@ class GameSimulator:
         )
         judge_conv.append_message(role="user", message=judge_input)
 
-        judge_response = self.judge.generate(
+        judge_gen = self.judge.generate(
             conv=judge_conv.to_openai_api_messages(),
             max_n_tokens=judge_max_n_tokens,
             temperature=judge_temperature,
             top_p=judge_top_p,
             min_p=judge_min_p,
-        ).strip()
+        )
+
+        if hasattr(judge_gen, "__await__"):
+                judge_gen = await judge_gen
+        if isinstance(judge_gen, str):
+                        judge_gen = judge_gen.strip()
+        else:
+            judge_gen = judge_gen.choices[0].message.content.strip()
+
+        judge_response = judge_gen.strip()
 
         judge_conv.append_message(role="assistant", message=judge_response)
         judge_label = judge_response == "<VALID>"
 
         return judge_label, judge_conv.to_openai_api_messages()
 
-    def check_if_agent_has_reached_goal(
+    async def check_if_agent_has_reached_goal(
         self,
         env_message: str,
         judge_prompt: Optional[str],
@@ -290,7 +299,7 @@ class GameSimulator:
 
         else:
             env_label = "goal reached" in env_message.lower()
-            verification_label, _ = self.run_judge_verification(
+            verification_label, _ = await self.run_judge_verification(
                 judge_prompt=judge_prompt,
                 verifier_input_generator=verifier_input_generator,
                 agent_messages=agent_messages,
@@ -664,7 +673,7 @@ class GameSimulator:
             # In case strict filtering is harder to perform, we do it
             # via running an LLM judge
             if judge_prompt_env is not None:
-                judge_label_env, _ = self.run_judge_verification(
+                judge_label_env, _ = await self.run_judge_verification(
                     judge_prompt=judge_prompt_env,
                     verifier_input_generator=verifier_input_generator,
                     agent_messages=env_conv.to_openai_api_messages(),
@@ -691,7 +700,7 @@ class GameSimulator:
             turn += 1
 
             # Check if we have reached goal
-            agent_has_reached_goal = self.check_if_agent_has_reached_goal(
+            agent_has_reached_goal = await self.check_if_agent_has_reached_goal(
                 env_message=extracted_env_response,
                 judge_prompt=judge_prompt_agent,
                 verifier_input_generator=verifier_input_generator,
@@ -706,7 +715,7 @@ class GameSimulator:
 
             # Extra verification if the environment thinks the game is solved
             if agent_has_reached_goal and judge_prompt_agent is not None:
-                judge_label, judge_messages = self.run_judge_verification(
+                judge_label, judge_messages = await self.run_judge_verification(
                     judge_prompt=judge_prompt_agent,
                     verifier_input_generator=verifier_input_generator,
                     agent_messages=agent_conv.to_openai_api_messages(),
