@@ -613,7 +613,7 @@ class GameSimulator:
         self.soft_reset()
 
         while turn < max_turns and not agent_has_reached_goal:
-            agent_response_dict = await self.generate_response_from_llm_helper(
+            agent_response_dict = await self.generate_response_from_llm_helper( # belief generated before this.
                 llm_inference_engine=self.agent,
                 conv=(
                     agent_conv.to_openai_api_messages()
