@@ -1,0 +1,12 @@
+- seed=69
+- agent=gpt-4o-mini
+- env=gpt-4o-mini
+- judge=gpt-4o-mini
+- game_env=murder_mystery
+- game_env.data_type=eval
+- start_index=0
+- end_index=4
+- agent.model_max_length=20000
+- agent_temperature=0.7
+- num_trajectories_per_game_scenario=1
+- agent_model_supports_system_message=true

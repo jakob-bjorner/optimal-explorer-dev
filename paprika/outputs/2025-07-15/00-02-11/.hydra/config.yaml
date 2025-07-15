@@ -1,0 +1,55 @@
+seed: 69
+start_index: 0
+end_index: 1
+agent_temperature: 0.7
+agent_top_p: 1.0
+agent_max_n_tokens: 128
+agent_model_supports_system_message: true
+env_temperature: 0.0
+env_top_p: 1.0
+env_max_n_tokens: 1024
+judge_temperature: 0.0
+judge_top_p: 1.0
+judge_max_n_tokens: 128
+temperature_threshold: 0.2
+min_p_choice: 0.3
+num_max_env_response_generations: 5
+num_max_agent_response_generations: 10
+num_trajectories_per_game_scenario: 1
+terminate_at_first_agent_failure: true
+curriculum_file: null
+curriculum_round: -1
+curriculum: null
+repo_dir: ???
+save_dir: outputs/exploration_datasets/${game_env.environment_name}_datasets/llm_evaluation_on_${game_env.environment_name}_split_${game_env.data_type}_agent_${agent.save_file_name}_env_${env.save_file_name}_judge_${judge.save_file_name}
+save_file: ${save_dir}/llm_evaluation_trajectories_agent_${agent.save_file_name}_env_${env.save_file_name}_judge_${judge.save_file_name}_${game_env.data_type}_${start_index}_${end_index}_seed_${seed}.json
+agent:
+  model_name: gpt-4o-mini
+  model_type: openai_api_models
+  base_model_name: gpt-4o-mini
+  model_max_length: 20000
+  model_name_summary: gpt-4o-mini/gpt-4o-mini
+  tokenizer_name: gpt-4o-mini
+  save_file_name: gpt-4o-mini
+  finetuned_tokenizer: false
+env:
+  model_name: gpt-4o-mini
+  model_type: openai_api_models
+  base_model_name: gpt-4o-mini
+  model_max_length: 131072
+  model_name_summary: gpt-4o-mini/gpt-4o-mini
+  tokenizer_name: gpt-4o-mini
+  save_file_name: gpt-4o-mini
+  finetuned_tokenizer: false
+game_env:
+  environment_name: murder_mystery
+  data_type: eval
+judge:
+  model_name: gpt-4o-mini
+  model_type: openai_api_models
+  base_model_name: gpt-4o-mini
+  model_max_length: 131072
+  model_name_summary: gpt-4o-mini/gpt-4o-mini
+  tokenizer_name: gpt-4o-mini
+  save_file_name: gpt-4o-mini
+  finetuned_tokenizer: false
