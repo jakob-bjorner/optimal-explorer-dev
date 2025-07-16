@@ -31,7 +31,9 @@ from llm_exploration.game import (
 )
 from dotenv import load_dotenv
 
-load_dotenv("/nas/ucb/jbjorner3/dev/optimal-explorer-dev/paprika/.env") 
+# load_dotenv("/nas/ucb/jbjorner3/dev/optimal-explorer-dev/paprika/.env") 
+# load_dotenv("/nas/ucb/satvik/optimal-explorer-dev/paprika/.env")
+load_dotenv(os.path.join(PARENT_DIR, ".env"))
 
 def load_inference_engine(
     config: Dict[str, Any], num_gpus_being_used: int

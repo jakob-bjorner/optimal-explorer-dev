@@ -9,6 +9,7 @@ from typing import (
 )
 import numpy as np
 import asyncio
+from copy import deepcopy
 
 from llm_exploration.inference import LLMInferenceEngine
 
@@ -590,6 +591,9 @@ class GameSimulator:
         """
         # Prepare the agent
         agent_conv = get_conversation_template("gpt-4")
+
+        belief_actions_convs = []
+
         agent_conv.append_message(role="user", message=agent_first_message)
         agent_conv_llm_resp_logs = []
 
@@ -622,6 +626,40 @@ class GameSimulator:
         self.soft_reset()
 
         while turn < max_turns and not agent_has_reached_goal:
+
+            # WHERE WE NEED TO ADD/UPDATE BELIEF STATE
+
+            def belief_update_prompt(belief_state, agent_action, env_response):
+                return [
+                     { "role": "system", "content": "You are a helpful assistant." },
+                     { "role": "user", "content": f'''Update the belief state based on the agent's action and environment response. Compress the context for an agent taking an action. Remove redundant information and maintain important information about the game state needed to take the optimal next action. Here is the context:
+Current belief state: {belief_state}
+Agent's action: {agent_action}
+Environment's response: {env_response}
+Output the updated belief state in the same format as the initial belief state inside <BELIEF> and </BELIEF> tags.
+'''}]
+            
+            if turn == 1:
+                belief_state: str = f'''env:{agent_conv.to_openai_api_messages()[1]['content']}\nprevious action:{agent_conv.to_openai_api_messages()[2]['content']}'''
+            if turn > 0:
+                curr_messages = agent_conv.to_openai_api_messages()
+                belief_state_response = await self.generate_response_from_llm_helper( # belief generated before this.
+                    llm_inference_engine=self.agent,
+                    conv=belief_update_prompt(
+                        belief_state,
+                        curr_messages[-2]['content'],
+                        curr_messages[-1]['content'],
+                        ).to_openai_api_messages(),
+                    generation_config=agent_generation_config,
+                    max_attempts=num_max_agent_response_generations,
+                    response_extractor=agent_response_extractor,
+                )
+                belief_state = belief_state_response['response']
+            
+                agent_conv = get_conversation_template("gpt-4")
+                agent_conv.append_message(role="system", message='You are a helpful assistant.')
+                agent_conv.append_message(role="user", message=belief_state)
+
             agent_response_dict = await self.generate_response_from_llm_helper( # belief generated before this.
                 llm_inference_engine=self.agent,
                 conv=(
@@ -697,6 +735,10 @@ class GameSimulator:
 
             agent_conv.append_message(role="user", message=extracted_env_response)
 
+            # UPDATE BELIEF STATE HERE
+
+            belief_actions_convs.append(deepcopy(agent_conv))
+
             turn += 1
 
             # Check if we have reached goal
@@ -761,6 +803,9 @@ class GameSimulator:
             "env_conversation": env_conv.to_openai_api_messages(),
             "judge_conversation": judge_messages,
             "rewards": rewards,
+            "belief_actions_convs": [
+                conv.to_openai_api_messages() for conv in belief_actions_convs
+            ],
         }
 
     async def generate_response_from_llm_helper(

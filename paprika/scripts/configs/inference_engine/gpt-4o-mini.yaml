@@ -1,5 +1,6 @@
 model_name: gpt-4o-mini
-model_type: openai_api_models
+# model_type: openai_api_models
+model_type: openrouter_api_models
 base_model_name: gpt-4o-mini
 
 # No use for gpt models

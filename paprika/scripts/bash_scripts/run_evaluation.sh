@@ -64,7 +64,7 @@ DATA_TYPE="eval"
 # belonging to indices [START_INDEX, ...., END_INDEX - 1] within the task group.
 # Mostly used to split evaluation across different GPUs, feel free to modify as required.
 START_INDEX=0
-END_INDEX=4
+END_INDEX=20
 
 
 # NOTE: In case one wants to run evaluation on the regular instruct model
