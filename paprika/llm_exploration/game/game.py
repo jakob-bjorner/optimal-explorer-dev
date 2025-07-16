@@ -629,15 +629,16 @@ class GameSimulator:
 
             # WHERE WE NEED TO ADD/UPDATE BELIEF STATE
 
-            def belief_update_prompt(belief_state, agent_action, env_response):
-                return [
-                     { "role": "system", "content": "You are a helpful assistant." },
-                     { "role": "user", "content": f'''Update the belief state based on the agent's action and environment response. Compress the context for an agent taking an action. Remove redundant information and maintain important information about the game state needed to take the optimal next action. Here is the context:
+            def belief_update_conv(belief_state, agent_action, env_response):
+                belief_conv = get_conversation_template("gpt-4")
+                belief_conv.append_message(role="system", message='You are a helpful assistant.')
+                belief_conv.append_message(role="user", message=f'''Update the belief state based on the agent's action and environment response. Compress the context for an agent taking an action. Remove redundant information and maintain important information about the game state needed to take the optimal next action. Here is the context:
 Current belief state: {belief_state}
 Agent's action: {agent_action}
 Environment's response: {env_response}
 Output the updated belief state in the same format as the initial belief state inside <BELIEF> and </BELIEF> tags.
-'''}]
+''')
+                return belief_conv
             
             if turn == 1:
                 belief_state: str = f'''env:{agent_conv.to_openai_api_messages()[1]['content']}\nprevious action:{agent_conv.to_openai_api_messages()[2]['content']}'''
@@ -645,7 +646,7 @@ Output the updated belief state in the same format as the initial belief state i
                 curr_messages = agent_conv.to_openai_api_messages()
                 belief_state_response = await self.generate_response_from_llm_helper( # belief generated before this.
                     llm_inference_engine=self.agent,
-                    conv=belief_update_prompt(
+                    conv=belief_update_conv(
                         belief_state,
                         curr_messages[-2]['content'],
                         curr_messages[-1]['content'],
