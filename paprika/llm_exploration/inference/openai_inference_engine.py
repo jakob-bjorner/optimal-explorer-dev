@@ -85,7 +85,7 @@ class OpenAIInferenceEngine(LLMInferenceEngine):
         min_p: Optional[float] = None,
     ) -> str: 
         # this will not return a str, because we want to be able to record more info. like the reasoning tokens generated.
-        output = self.API_ERROR_OUTPUT
+        output = {"error": self.API_ERROR_OUTPUT}
         # import ipdb; ipdb.set_trace()
         for _ in range(self.API_MAX_RETRY):
             try:

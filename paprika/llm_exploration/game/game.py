@@ -344,6 +344,7 @@ class GameSimulator:
         judge_prompt_env: Optional[str],
         verifier_input_generator: Optional[Callable],
         agent_model_supports_system_message: bool,
+        belief_config: dict,
     ) -> Optional[Dict[str, Any]]:
         """
         Returns the conversation from one simulation run
@@ -624,43 +625,47 @@ class GameSimulator:
         }
 
         self.soft_reset()
-
+        belief_state = ""
+        belief_state_response_llm_resp = None
         while turn < max_turns and not agent_has_reached_goal:
 
             # WHERE WE NEED TO ADD/UPDATE BELIEF STATE
+            if belief_config["style"] == "basic":
+                def belief_update_conv(belief_state, agent_action, env_response):
+                    belief_conv = get_conversation_template("gpt-4")
 
-            def belief_update_conv(belief_state, agent_action, env_response):
-                belief_conv = get_conversation_template("gpt-4")
-                belief_conv.append_message(role="system", message='You are a helpful assistant.')
-                belief_conv.append_message(role="user", message=f'''Update the belief state based on the agent's action and environment response. Compress the context for an agent taking an action. Remove redundant information and maintain important information about the game state needed to take the optimal next action. Here is the context:
-Current belief state: {belief_state}
-Agent's action: {agent_action}
-Environment's response: {env_response}
-Output the updated belief state in the same format as the initial belief state inside <BELIEF> and </BELIEF> tags.
-''')
-                return belief_conv
-            
-            if turn == 1:
-                belief_state: str = f'''env:{agent_conv.to_openai_api_messages()[1]['content']}\nprevious action:{agent_conv.to_openai_api_messages()[2]['content']}'''
-            if turn > 0:
-                curr_messages = agent_conv.to_openai_api_messages()
-                belief_state_response = await self.generate_response_from_llm_helper( # belief generated before this.
-                    llm_inference_engine=self.agent,
-                    conv=belief_update_conv(
-                        belief_state,
-                        curr_messages[-2]['content'],
-                        curr_messages[-1]['content'],
-                        ).to_openai_api_messages(),
-                    generation_config=agent_generation_config,
-                    max_attempts=num_max_agent_response_generations,
-                    response_extractor=agent_response_extractor,
-                )
-                belief_state = belief_state_response['response']
-            
-                agent_conv = get_conversation_template("gpt-4")
-                agent_conv.append_message(role="system", message='You are a helpful assistant.')
-                agent_conv.append_message(role="user", message=belief_state)
-
+                    belief_conv.append_message(role="user", message=f'''Update the belief state based on the agent's action and environment response. Compress the context for an agent taking an action. Remove redundant information and maintain important information about the game state needed to take optimal future actions.
+    Current belief state: {belief_state}
+    Agent's action: {agent_action}
+    Environment's response: {env_response}
+    Output the updated belief state in the same format as the initial belief state inside <BELIEF> and </BELIEF> tags. Understand that only the generated belief state is fed to the agent, so be sure to include all necessary information about game mechanics.''')
+                    return belief_conv
+                
+                if turn == 1:
+                    belief_state: str = "The following belief begins the game. Be sure to note important information from this belief state such that it persists in future belief states.\n<BELIEF>\n"+agent_conv.to_openai_api_messages()[-3]['content']+"\n</BELIEF>"
+                    #f'''env:{agent_conv.to_openai_api_messages()[-2]['content']}\nprevious action:{agent_conv.to_openai_api_messages()[-1]['content']}'''
+                if turn > 0:
+                    curr_messages = agent_conv.to_openai_api_messages()
+                    belief_state_response = await self.generate_response_from_llm_helper( # belief generated before this.
+                        llm_inference_engine=self.agent,
+                        conv=belief_update_conv(
+                            belief_state,
+                            curr_messages[-2]['content'],
+                            curr_messages[-1]['content'],
+                            ).to_openai_api_messages(),
+                        generation_config=agent_generation_config,
+                        max_attempts=num_max_agent_response_generations,
+                        response_extractor=None,
+                    )
+                    belief_state = belief_state_response['response']
+                    belief_state_response_llm_resp = belief_state_response["llm_resp"].dict()
+                
+                    agent_conv = get_conversation_template("gpt-4")
+                    agent_conv.append_message(role="user", message=belief_state)
+            elif belief_config["style"] == "none":
+                ...
+            else:
+                raise NotImplemented
             agent_response_dict = await self.generate_response_from_llm_helper( # belief generated before this.
                 llm_inference_engine=self.agent,
                 conv=(
@@ -681,7 +686,8 @@ Output the updated belief state in the same format as the initial belief state i
             extracted_agent_response = agent_response_dict["extracted_response"]
 
             agent_conv.append_message(role="assistant", message=agent_action)
-            agent_conv_llm_resp_logs.append(agent_response_dict['llm_resp'].dict())
+            agent_conv_llm_resp_logs.append(agent_response_dict['llm_resp'].dict() |
+                                            ({"belief": belief_state_response_llm_resp} if belief_state_response_llm_resp else dict()))
 
             # In case there is an optional message we want to pass to the environment
             if env_optional_message is not None:
@@ -804,6 +810,7 @@ Output the updated belief state in the same format as the initial belief state i
             "env_conversation": env_conv.to_openai_api_messages(),
             "judge_conversation": judge_messages,
             "rewards": rewards,
+            "belief_config": belief_config,
             "belief_actions_convs": [
                 conv.to_openai_api_messages() for conv in belief_actions_convs
             ],

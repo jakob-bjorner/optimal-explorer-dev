@@ -514,6 +514,7 @@ async def alt_main(config: DictConfig):
                 agent_model_supports_system_message=(
                     config["agent_model_supports_system_message"]
                 ),
+                belief_config=config["belief_config"],
             )
 
             # checking if the game trajectory is valid
