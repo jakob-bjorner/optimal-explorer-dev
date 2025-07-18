@@ -635,33 +635,85 @@ class GameSimulator:
                     belief_conv = get_conversation_template("gpt-4")
 
                     belief_conv.append_message(role="user", message=f'''Update the belief state based on the agent's action and environment response. Compress the context for an agent taking an action. Remove redundant information and maintain important information about the game state needed to take optimal future actions.
-    Current belief state: {belief_state}
-    Agent's action: {agent_action}
-    Environment's response: {env_response}
-    Output the updated belief state in the same format as the initial belief state inside <BELIEF> and </BELIEF> tags. Understand that only the generated belief state is fed to the agent, so be sure to include all necessary information about game mechanics.''')
+Global Instruction: {agent_first_message}
+Current belief state: {belief_state}
+Agent's action: {agent_action}
+Environment's response: {env_response}
+Output the updated belief state inside <BELIEF> and </BELIEF> tags.''')
                     return belief_conv
+                def prompt_action_with_belief(belief_state):
+                    agent_conv = get_conversation_template("gpt-4")
+                    agent_conv.append_message(role="user", message=f'Global Instruction: {agent_first_message}\nCurrent belief state: {belief_state}\nNow make your next action based on the global instruction and current belief.')
+                    return agent_conv
+                
+                if turn == 1:
+                    belief_state: str = "<BELIEF>\nNo belief to start.\n</BELIEF>"
+                if turn > 0:
+                    curr_messages = agent_conv.to_openai_api_messages()
+                    belief_state_response = {"response": ""}
+                    tries = 0
+                    valid_res = lambda res: bool("<BELIEF>" in res and "</BELIEF>" in res)
+                    while not valid_res(belief_state_response['response']) and tries < 3:
+                        belief_state_response = await self.generate_response_from_llm_helper( # belief generated before this.
+                            llm_inference_engine=self.agent,
+                            conv=belief_update_conv(
+                                belief_state,
+                                curr_messages[-2]['content'],
+                                curr_messages[-1]['content'],
+                                ).to_openai_api_messages(),
+                            generation_config=agent_generation_config,
+                            max_attempts=num_max_agent_response_generations,
+                            response_extractor=None,
+                        )
+                        tries+=1
+                    if not valid_res(belief_state_response['response']):
+                        import ipdb
+                        ipdb.set_trace()
+                    belief_state = belief_state_response['response'].split("<BELIEF>")[1].split("</BELIEF>")[0] # tries to spit out ctions this isnt 
+                    belief_state_response_llm_resp = belief_state_response["llm_resp"].dict()
+                    agent_conv = prompt_action_with_belief(belief_state)
+            elif belief_config["style"] == "belief_no_inst":
+                def belief_update_conv(belief_state, agent_action, env_response):
+                    belief_conv = get_conversation_template("gpt-4")
+
+                    belief_conv.append_message(role="user", message=f'''Update the belief state based on the agent's action and environment response. Compress the context for an agent taking an action. Remove redundant information and maintain important information about the game state needed to take optimal future actions.
+Current belief state: {belief_state}
+Agent's action: {agent_action}
+Environment's response: {env_response}
+Output the updated belief state inside <BELIEF> and </BELIEF> tags. Understand that only the generated belief state is fed to the agent, so be sure to include all necessary information about game mechanics.''')
+                    return belief_conv
+                def prompt_action_with_belief(belief_state):
+                    agent_conv = get_conversation_template("gpt-4")
+                    agent_conv.append_message(role="user", message=belief_state)
+                    return agent_conv
                 
                 if turn == 1:
                     belief_state: str = "The following belief begins the game. Be sure to note important information from this belief state such that it persists in future belief states.\n<BELIEF>\n"+agent_conv.to_openai_api_messages()[-3]['content']+"\n</BELIEF>"
-                    #f'''env:{agent_conv.to_openai_api_messages()[-2]['content']}\nprevious action:{agent_conv.to_openai_api_messages()[-1]['content']}'''
                 if turn > 0:
                     curr_messages = agent_conv.to_openai_api_messages()
-                    belief_state_response = await self.generate_response_from_llm_helper( # belief generated before this.
-                        llm_inference_engine=self.agent,
-                        conv=belief_update_conv(
-                            belief_state,
-                            curr_messages[-2]['content'],
-                            curr_messages[-1]['content'],
-                            ).to_openai_api_messages(),
-                        generation_config=agent_generation_config,
-                        max_attempts=num_max_agent_response_generations,
-                        response_extractor=None,
-                    )
-                    belief_state = belief_state_response['response']
+                    belief_state_response = {"response": ""}
+                    tries = 0
+                    valid_res = lambda res: bool("<BELIEF>" in res and "</BELIEF>" in res)
+                    
+                    while not valid_res(belief_state_response['response']) and tries < 3:
+                        belief_state_response = await self.generate_response_from_llm_helper( # belief generated before this.
+                            llm_inference_engine=self.agent,
+                            conv=belief_update_conv(
+                                belief_state,
+                                curr_messages[-2]['content'],
+                                curr_messages[-1]['content'],
+                                ).to_openai_api_messages(),
+                            generation_config=agent_generation_config,
+                            max_attempts=num_max_agent_response_generations,
+                            response_extractor=None,
+                        )
+                        tries += 1
+                    if not valid_res(belief_state_response['response']):
+                        import ipdb
+                        ipdb.set_trace()
+                    belief_state = belief_state_response['response'].split("<BELIEF>")[1].split("</BELIEF>")[0] # tries to spit out ctions this isnt 
                     belief_state_response_llm_resp = belief_state_response["llm_resp"].dict()
-                
-                    agent_conv = get_conversation_template("gpt-4")
-                    agent_conv.append_message(role="user", message=belief_state)
+                    agent_conv = prompt_action_with_belief(belief_state)
             elif belief_config["style"] == "none":
                 ...
             else:

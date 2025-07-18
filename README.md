@@ -9,6 +9,10 @@ To clone this repo, you must run the following (this is to support a frok of ver
 git clone --recurse-submodules https://github.com/jakob-bjorner/optimal-explorer-dev.git
 ```
 
+```bash
+git submodule update --init --recursive
+```
+
 
 ```bash
 pip install -e .
