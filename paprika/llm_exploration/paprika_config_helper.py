@@ -4,15 +4,7 @@ Configuration helper for paprika interactions.
 This makes it easy to switch between different games by changing a single variable.
 """
 
-import os
-import sys
-from typing import Dict, Any, List, Tuple
-
-# Add the paprika and verl paths to sys.path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'paprika'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'verl_submodule'))
-
-from omegaconf import OmegaConf, DictConfig
+from typing import Dict, Any, List
 
 
 class PaprikaConfigHelper:
