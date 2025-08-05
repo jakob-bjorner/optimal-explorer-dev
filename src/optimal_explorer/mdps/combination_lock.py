@@ -271,9 +271,12 @@ class CombinationLock:
     def get_trajectory_info(self):
         """Compute some metrics for logging efficiency over the trajectory in verl and other RL/LLM settings."""
         repeated_guess_chars_dict = Counter()
+        feedback_hist = []
         for guess in self.guess_history:
             count_of_guess_chars_correct = Counter()
-            for i, (g_i,f_i) in enumerate(zip(guess, self._get_feedback(guess))):
+            feedback = self._get_feedback(guess)
+            feedback_hist.append((guess, feedback))
+            for i, (g_i,f_i) in enumerate(zip(guess, feedback)):
                 if f_i == 2:
                     count_of_guess_chars_correct[(i, g_i)] += 1
             repeated_guess_chars_dict.update(count_of_guess_chars_correct) # this adds to all matching tuples.
@@ -282,6 +285,7 @@ class CombinationLock:
         return {
             # we want this to be interpretable, just take the number of times the guess used the same token in the same position.
             "repeated_guesses": repeated_guesses,
+            "feedback_hist": feedback_hist,
         }
     
 def sample_combination_lock_mdp(seed: Optional[int] = None) -> CombinationLock:
