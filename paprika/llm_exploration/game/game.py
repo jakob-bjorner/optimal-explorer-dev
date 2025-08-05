@@ -634,12 +634,7 @@ class GameSimulator:
                 def belief_update_conv(belief_state, agent_action, env_response):
                     belief_conv = get_conversation_template("gpt-4")
 
-                    belief_conv.append_message(role="user", message=f'''Update the belief state based on the agent's action and environment response. Compress the context for an agent taking an action. Remove redundant information and maintain important information about the game state needed to take optimal future actions.
-Global Instruction: {agent_first_message}
-Current belief state: {belief_state}
-Agent's action: {agent_action}
-Environment's response: {env_response}
-Output the updated belief state inside <BELIEF> and </BELIEF> tags.''')
+                    belief_conv.append_message(role="user", message=f'''Update the belief state based on the agent's action and environment response. Compress the context for an agent taking an action. Remove redundant information and maintain important information about the game state needed to take optimal future actions.\nGlobal Instruction: {agent_first_message}\nCurrent belief state: {belief_state}\nAgent's action: {agent_action}\nEnvironment's response: {env_response}\nOutput the updated belief state inside <BELIEF> and </BELIEF> tags.''')
                     return belief_conv
                 def prompt_action_with_belief(belief_state):
                     agent_conv = get_conversation_template("gpt-4")
@@ -676,11 +671,7 @@ Output the updated belief state inside <BELIEF> and </BELIEF> tags.''')
                 def belief_update_conv(belief_state, agent_action, env_response):
                     belief_conv = get_conversation_template("gpt-4")
 
-                    belief_conv.append_message(role="user", message=f'''Update the belief state based on the agent's action and environment response. Compress the context for an agent taking an action. Remove redundant information and maintain important information about the game state needed to take optimal future actions.
-Current belief state: {belief_state}
-Agent's action: {agent_action}
-Environment's response: {env_response}
-Output the updated belief state inside <BELIEF> and </BELIEF> tags. Understand that only the generated belief state is fed to the agent, so be sure to include all necessary information about game mechanics.''')
+                    belief_conv.append_message(role="user", message=f'''Update the belief state based on the agent's action and environment response. Compress the context for an agent taking an action. Remove redundant information and maintain important information about the game state needed to take optimal future actions.\nCurrent belief state: {belief_state}\nAgent's action: {agent_action}\nEnvironment's response: {env_response}\nOutput the updated belief state inside <BELIEF> and </BELIEF> tags. Understand that only the generated belief state is fed to the agent, so be sure to include all necessary information about game mechanics.''')
                     return belief_conv
                 def prompt_action_with_belief(belief_state):
                     agent_conv = get_conversation_template("gpt-4")
@@ -951,6 +942,7 @@ Output the updated belief state inside <BELIEF> and </BELIEF> tags. Understand t
                     llm_resp = llm_inference_engine.generate(**generation_config)
                     if hasattr(llm_resp, "__await__"):
                         llm_resp = await llm_resp
+                        # import pdb; pdb.set_trace()
                     if isinstance(llm_resp, str):
                         llm_generation = llm_resp.strip()
                     else: 

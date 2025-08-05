@@ -4,15 +4,7 @@ Configuration helper for paprika interactions.
 This makes it easy to switch between different games by changing a single variable.
 """
 
-import os
-import sys
-from typing import Dict, Any, List, Tuple
-
-# Add the paprika and verl paths to sys.path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'paprika'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'verl_submodule'))
-
-from omegaconf import OmegaConf, DictConfig
+from typing import Dict, Any, List
 
 
 class PaprikaConfigHelper:
@@ -113,21 +105,24 @@ class PaprikaConfigHelper:
         
         # Create the full configuration
         agent_config = {
-            "model_type": "openai_api_models",
+            "model_type": default_config["agent_model"],
             "model_name": default_config["agent_model"],
-            "model_max_length": 20000
+            "model_max_length": 20000,
+            "mode": "agent",
         }
         
         env_config = {
-            "model_type": "openai_api_models",
+            "model_type": default_config["env_model"],
             "model_name": default_config["env_model"],
-            "model_max_length": 20000
+            "model_max_length": 20000,
+            "mode": "env",
         }
         
         judge_config = {
-            "model_type": "openai_api_models",
+            "model_type": default_config["judge_model"],
             "model_name": default_config["judge_model"],
-            "model_max_length": 1000
+            "model_max_length": 1000,
+            "mode": "judge",
         }
         
         belief_config = {
