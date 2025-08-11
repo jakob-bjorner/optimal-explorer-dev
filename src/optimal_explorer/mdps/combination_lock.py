@@ -206,8 +206,8 @@ class CombinationLock:
     def _is_valid_guess(self, guess: str) -> bool:
         """Check if a guess is valid."""
         return (len(guess) == self.combination_length and 
-                all(c in self.vocab for c in guess) and 
-                len(set(guess)) == self.combination_length)  # All characters must be distinct
+                all(c in self.vocab for c in guess))# and 
+                #len(set(guess)) == self.combination_length)  # All characters must be distinct
     
     def _get_feedback(self, guess: str) -> List[int]:
         """
@@ -268,6 +268,7 @@ class CombinationLock:
             return -1.0
         else:
             return (self.max_attempts + 1 - attempt_number)/self.max_attempts
+    
     def get_trajectory_info(self):
         """Compute some metrics for logging efficiency over the trajectory in verl and other RL/LLM settings."""
         repeated_guess_chars_dict = Counter()
