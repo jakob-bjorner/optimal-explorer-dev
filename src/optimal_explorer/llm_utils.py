@@ -57,7 +57,9 @@ async def llm_call(
         payload['max_tokens'] = 32000
         payload['top_k'] = -1
 
-    if not model.lower().endswith('base'):
+    if 'qwen' in model.lower():
+        payload['text'] = messages
+    elif not model.lower().endswith('base'):
         payload['messages'] = messages
     else:
         api_url = api_url.replace("/chat/completions", "/completions")
@@ -67,7 +69,6 @@ async def llm_call(
         else:
             payload['prompt'] = user
         payload['stop'] = ["role:"]
-
 
     if reasoning_effort:
         payload["reasoning"] = {
