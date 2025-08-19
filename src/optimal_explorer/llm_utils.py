@@ -61,7 +61,10 @@ async def llm_call(
         payload['max_tokens'] = 2000 # this is the max number of generated/completion tokens
         payload['top_k'] = -1
 
-    if not model.lower().endswith('base'):
+    if 'qwen' in model.lower():
+        payload['text'] = messages
+        payload['messages'] = messages
+    elif not model.lower().endswith('base'):
         payload['messages'] = messages
     else:
         api_url = api_url.replace("/chat/completions", "/completions")
