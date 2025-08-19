@@ -54,7 +54,7 @@ async def llm_call(
     else:
         api_url = url # this to support calling local model for base model testing.
         headers = None
-        payload['max_tokens'] = 32000
+        payload['max_tokens'] = 2000 # this is the max number of generated/completion tokens
         payload['top_k'] = -1
 
     if 'qwen' in model.lower():
@@ -79,11 +79,15 @@ async def llm_call(
     async with aiohttp.ClientSession() as session:
         for attempt in range(10):
             try:
-                async with session.post(api_url, headers=headers, data=json.dumps(payload)) as response:
+                async with session.post(api_url, headers=headers, json=payload) as response:
                     if response is None:
                         print("API request failed: response is None.")
                         continue
-                    if response.status == 200:
+                    elif response.status != 200:
+                        import ipdb; ipdb.set_trace()
+                        print("API request failed: status "+ str(response.json()))
+                        continue
+                    elif response.status == 200:
                         data = await response.json()
                         if "choices" not in data:
                             print("API request failed: 'choices' key not in response.")
