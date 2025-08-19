@@ -179,7 +179,7 @@ class CombinationLock:
             done: Whether the episode is finished
             info: Additional information
         """
-        if (self.current_attempt == self.max_attempts) or (([2]*self.combination_length) in self._get_observation()['feedback_history']):
+        if self.is_terminated():
             raise Exception(f"episode already terminated, {self.current_attempt=}, {self._get_observation()['feedback_history']=}")
         if not self._is_valid_guess(action):
             return self._get_observation(), -1.0, True, {'error': 'Invalid guess'}
@@ -265,7 +265,7 @@ class CombinationLock:
         else:
             last_guess_correct = ([2] * self.combination_length) == obs['feedback_history'][-1]
         if not last_guess_correct:
-            return -1.0
+            return -1.0 # * self.max_attempts
         else:
             return (self.max_attempts + 1 - attempt_number)/self.max_attempts
     def get_trajectory_info(self):
@@ -287,6 +287,8 @@ class CombinationLock:
             "repeated_guesses": repeated_guesses,
             "feedback_hist": feedback_hist,
         }
+    def is_terminated(self):
+        return (self.current_attempt == self.max_attempts) or (([2]*self.combination_length) in self._get_observation()['feedback_history'])
     
 def sample_combination_lock_mdp(seed: Optional[int] = None) -> CombinationLock:
     """
