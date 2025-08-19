@@ -59,6 +59,7 @@ async def llm_call(
 
     if 'qwen' in model.lower():
         payload['text'] = messages
+        payload['messages'] = messages
     elif not model.lower().endswith('base'):
         payload['messages'] = messages
     else:
