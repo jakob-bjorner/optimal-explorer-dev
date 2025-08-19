@@ -205,10 +205,10 @@ def play_single_game(agent: BayesOptimalAgent, game_id: int, model: str) -> Tupl
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--combination-length", type=int, default=3, help="Length of the combination")
-    parser.add_argument("--vocab", type=str, default="!@#$%^&*pqrs5678", help="Vocabulary to use")
+    parser.add_argument("--vocab", type=str, default="0123456789", help="Vocabulary to use")
     parser.add_argument("--max-attempts", type=int, default=12, help="Maximum number of attempts")
     parser.add_argument("--num-games", type=int, default=100, help="Number of games to play")
-    parser.add_argument("--model", type=str, default="bayes_optimal_2", help="Model name (for logging)")
+    parser.add_argument("--model", type=str, default="bayes_optimal_2_digits", help="Model name (for logging)")
     args = parser.parse_args()
 
     num_games = args.num_games

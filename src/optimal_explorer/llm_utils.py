@@ -3,6 +3,10 @@ import json
 import aiohttp
 from dotenv import load_dotenv
 
+from transformers import AutoTokenizer
+
+
+
 load_dotenv()
 
 def create_prompt_string(messages):
@@ -73,8 +77,13 @@ async def llm_call(
             "effort": reasoning_effort,
         }
     
+    
+    if 'qwen3' in model.lower():
+        tokenizer = AutoTokenizer.from_pretrained(model)
+        end_think_text = "\nConsidering the limited time by the user, I have to give my response now.\n</think>.\n\n"
+    
     async with aiohttp.ClientSession() as session:
-        for attempt in range(10):
+        for attempt in range(5):
             try:
                 async with session.post(api_url, headers=headers, json=payload) as response:
                     if response is None:
@@ -82,7 +91,7 @@ async def llm_call(
                         continue
                     elif response.status != 200:
                         import ipdb; ipdb.set_trace()
-                        print("API request failed: status "+ str(response.json()))
+                        print("API request failed: status "+ str(await response.json()))
                         continue
                     elif response.status == 200:
                         data = await response.json()
@@ -92,10 +101,38 @@ async def llm_call(
                         if not data["choices"]:
                             print("API request failed: 'choices' key is empty in response.")
                             continue
+                        if '</think>' not in data["choices"][0]["message"]["content"]:
+                            messages = payload['messages'] + [{"role": "assistant", "content": data["choices"][0]["message"]["content"] + end_think_text}]
+                            prompt_chat_str = tokenizer.apply_chat_template(messages, add_generation_prompt=False, tokenize=False)[:-13]
+                            generation_url = api_url.replace("v1/chat/completions", "generate")
+                            payload2 = payload.copy()
+                            payload2["text"] = prompt_chat_str
+                            payload2["max_new_tokens"] = 2000
+
+                            async with session.post(generation_url, headers=headers, json=payload2) as response:
+                                if response is None:
+                                    print("API request failed: response is None.")
+                                    continue
+                                elif response.status != 200:
+                                    import ipdb; ipdb.set_trace()
+                                    print("API request failed: status "+ str(await response.json()))
+                                    continue
+                                elif response.status == 200:
+                                    data2 = await response.json()
+                                    if "text" not in data2:
+                                        print("API request failed: 'text' key not in response.")
+                                        continue
+                                    if not data2["text"]:
+                                        print("API request failed: 'choices' key is empty in response.")
+                                        continue
+                                    data['usage']['completion_tokens'] = data['usage']['completion_tokens'] + data2['meta_info']['completion_tokens']
+                                    data['usage']['total_tokens'] = data['usage']['total_tokens'] +data2['meta_info']['completion_tokens']
+                                    data["choices"][0]["message"]["content"] = data["choices"][0]["message"]["content"] + end_think_text + data2['text']
                         if get_everything:
                             return data
                         else:
                             return data["choices"][0]["message"]["content"]
+                        
             except Exception as e:
                 print(f"API request failed. Retrying... ({attempt + 1}/5)")
                 continue
