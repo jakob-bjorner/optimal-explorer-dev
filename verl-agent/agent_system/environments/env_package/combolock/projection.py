@@ -4,7 +4,7 @@ from typing import List
 import re
 from copy import deepcopy
 
-def combolock_projection(actions: List[str], generate_belief: List[bool]):
+def combolock_projection(actions: List[str], generate_belief: List[bool], vocab):
     """
     An function to process the actions
     actions: the list of actions to be processeed, it is a list of strings.
@@ -37,7 +37,7 @@ def combolock_projection(actions: List[str], generate_belief: List[bool]):
             extracted_action = actions[i][start_idx + len(start_tag):end_idx].strip().lower()
             # then we check if it is a valid action according to the mdp:
             if not generate_belief[i]:
-                vocab = "0123456789"
+                # vocab = "0123456789"
                 guess = ''.join(c for c in extracted_action if c in vocab)
                 if not (len(guess) == 3 and 
                     all(c in vocab for c in guess) and 

@@ -25,6 +25,9 @@ from verl.models.transformers.qwen2_vl import get_rope_index
 from agent_system.multi_turn_rollout.utils import process_image, to_list_of_dict, torch_to_numpy, filter_group_data
 from agent_system.environments import EnvironmentManagerBase
 from typing import List, Dict
+from torch.nn.utils.rnn import pad_sequence
+import tensordict as td
+from copy import deepcopy
 
 class TrajectoryCollector:
     def __init__(self, config, tokenizer: PreTrainedTokenizer, processor=None):
@@ -333,99 +336,290 @@ class TrajectoryCollector:
         total_infos = [[] for _ in range(batch_size)]
         episode_lengths = np.zeros(batch_size, dtype=np.int32)
         episode_rewards = np.zeros(batch_size, dtype=np.float32)
-        # Trajectory collection loop
-        # breakpoint()
-        for _step in range(self.config.env.max_steps):
-            active_masks = np.logical_not(is_done)
 
-            batch = self.preprocess_batch(gen_batch=gen_batch, obs=obs)
+        # need a completely different loop to handle single context stuff, because else it will be really messy. Almost none will be shared I think.
+        if self.config.actor_rollout_ref.actor.single_context:
+            messages_list: list[list[dict[str, str]]] = [[] for _ in range(batch_size)] # this will contain full message history
+            input_ids_list: list[list[int]] = [[] for _ in range(batch_size)] # this will be the list of input_ids which I feed into the vllm loop every time. 
+            attention_mask_list: list[list[int]] = [[] for _ in range(batch_size)]
+            # position_ids_list: list[list[int]] = [[] for _ in range(batch_size)]
+            loss_mask_list: list[list[int]] = [[] for _ in range(batch_size)]
+            for i in range(len(obs['chat'])):
+                starting_chat: list[dict[str, str]] = obs['chat'][i]
+                messages_list[i].extend(starting_chat)
 
-            batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
-            non_tensor_batch_keys_to_pop = ["raw_prompt_ids"]
-            if "multi_modal_data" in batch.non_tensor_batch:
-                non_tensor_batch_keys_to_pop.append("multi_modal_data")
-            if "raw_prompt" in batch.non_tensor_batch:
-                non_tensor_batch_keys_to_pop.append("raw_prompt")
-            if "tools_kwargs" in batch.non_tensor_batch:
-                non_tensor_batch_keys_to_pop.append("tools_kwargs")
-            batch_input = batch.pop(
-                batch_keys=batch_keys_to_pop,
-                non_tensor_batch_keys=non_tensor_batch_keys_to_pop,
-            )
+                starting_chat_input_ids: list[int] = self.tokenizer.apply_chat_template(starting_chat, add_generation_prompt=False, tokenize=True)
+                input_ids_list[i].extend(starting_chat_input_ids)
+                attention_mask_list[i].extend([1] * len(starting_chat_input_ids))
+                # note, loss_mask_list is empty because the prompt and response input_ids are segmented.
 
-            batch_input.meta_info = gen_batch.meta_info
+            BASE_CHAT_HISTORY = [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "I am a user."}]
+            base_conv_wo_gen_prompt_end_pos = len(self.tokenizer.apply_chat_template(BASE_CHAT_HISTORY, add_generation_prompt=False, tokenize=False))
+            generation_prompt_ids: list[int] = self.tokenizer.apply_chat_template(BASE_CHAT_HISTORY, add_generation_prompt=True, tokenize=True)[len(self.tokenizer.apply_chat_template(BASE_CHAT_HISTORY, add_generation_prompt=False, tokenize=True)):]
+            def _update_input_ids(new_input_ids: List[int], index: int, should_add_loss_mask: bool) -> None:
+                input_ids: list[int] = input_ids_list[index]
+                attention_mask: list[int] = attention_mask_list[index]
+                # position_ids: list[int] = position_ids_list[index]
+                loss_mask: list[int] = loss_mask_list[index]
 
-            batch_output = actor_rollout_wg.generate_sequences(batch_input)
+                input_ids += new_input_ids
+                attn_mask = [1] * len(new_input_ids)
+                attention_mask += attn_mask
+                loss_mask += [int(should_add_loss_mask)] * len(new_input_ids)
+                # position_ids += (compute_position_id_with_mask(torch.tensor(attn_mask)) + (position_ids[-1] + 1)).tolist()
+                assert len(input_ids) == len(attention_mask), f"""context has different length of {len(input_ids)=}, {len(attention_mask)=},"""
+            def add_assistant_message(
+                index: int,
+                content_str: str,
+                content_ids: list[int],
+                should_add_loss_mask: bool = True,
+            ) -> None:
+                content_str = content_str.replace("<|im_end|>", "")
+                messages_list[index].append(dict(role="assistant", content=content_str))
+                _update_input_ids(content_ids, index, should_add_loss_mask=should_add_loss_mask)
+                if content_ids[-1] != self.tokenizer.encode("<|im_end|>", add_special_tokens=False)[0]:
+                    _update_input_ids(self.tokenizer.encode("<|im_end|>", add_special_tokens=False), index, should_add_loss_mask=False)
 
-            batch.non_tensor_batch['uid'] = uid_batch
-            batch.non_tensor_batch['traj_uid'] = traj_uid
+                _update_input_ids(self.tokenizer.encode("\n", add_special_tokens=False), index, should_add_loss_mask=False)
+            def add_user_messages(
+                index: int,
+                new_messages: list[dict[str, str]], 
+            ) -> None:
+                new_messages = deepcopy(new_messages)
+                messages_list[index].extend(new_messages)
+                content_str = self.tokenizer.apply_chat_template([*BASE_CHAT_HISTORY, *new_messages], add_generation_prompt=False, tokenize=False)
+                content_ids = self.tokenizer.encode(content_str[base_conv_wo_gen_prompt_end_pos:], add_special_tokens=False)
+                _update_input_ids(content_ids, index, should_add_loss_mask=False)
+            def add_generation_prompt(
+                index: int,
+            ):
+                temp_generation_prompt_ids = generation_prompt_ids
+                cur_generation_prompt_ids = [] if input_ids_list[index][-len(temp_generation_prompt_ids):] == temp_generation_prompt_ids else temp_generation_prompt_ids
+                if cur_generation_prompt_ids:
+                    _update_input_ids(cur_generation_prompt_ids, index, should_add_loss_mask=False)
+            def prepare_data_for_data_proto(input_ids_list: list[list[int]], attention_mask_list: list[list[int]]):
+                input_ids = pad_sequence([torch.tensor(t) for t in input_ids_list], batch_first=True, padding_value=self.tokenizer.pad_token_id, padding_side='left')
+                attention_mask = pad_sequence([torch.tensor(t) for t in attention_mask_list], batch_first=True, padding_value=0, padding_side='left')
+                position_ids = compute_position_id_with_mask(attention_mask)
+                return input_ids, attention_mask, position_ids
+            prompt_input_ids_list = deepcopy(input_ids_list)
+            small_input_ids: list[int] = self.tokenizer.apply_chat_template([{'role':"user", 'content': "What is 2 + 2? Please answer quickly."}], add_generation_prompt=True, tokenize=True)
+            small_attention_mask = [1] * len(small_input_ids)
+            breakpoint()
+            for _step in range(self.config.env.max_steps):
+                active_masks = np.logical_not(is_done)
+                # need to construct ["input_ids", "attention_mask", "position_ids"] in every loop
+                # then put them in batched_input object to feed to 
+                # batch_input = None
+                # batch = self.preprocess_batch(gen_batch=gen_batch, obs=obs) # need to do the logic of creating the next batch_input object, which should contain the tensors padded to length for all conversations.
+                trimmed_input_ids_list = list(input_ids_list)
+                trimmed_attention_mask_list = list(attention_mask_list)
+                for i in range(batch_size):
+                    if is_done[i]:
+                        trimmed_input_ids_list[i] = small_input_ids
+                        trimmed_attention_mask_list[i] = small_attention_mask
+                    else:
+                        add_generation_prompt(i)
+                        
+                # input_ids = pad_sequence([torch.tensor(t) for t in trimmed_input_ids_list], batch_first=True, padding_value=self.tokenizer.pad_token_id, padding_side='left')
+                # attention_mask = pad_sequence([torch.tensor(t) for t in trimmed_attention_mask_list], batch_first=True, padding_value=0, padding_side='left')
+                # position_ids = compute_position_id_with_mask(attention_mask)
+                input_ids, attention_mask, position_ids = prepare_data_for_data_proto(trimmed_input_ids_list, trimmed_attention_mask_list)
+                batch_input = DataProto(
+                    td.TensorDict(dict(
+                        input_ids = input_ids,
+                        attention_mask = attention_mask,
+                        position_ids = position_ids,
+                    ), batch_size=batch_size),
+                    meta_info=gen_batch.meta_info, # I missing data_source and index fields. Not sure if important.
+                )
 
-            batch = batch.union(batch_output)
-            
-            text_actions = self.tokenizer.batch_decode(batch.batch['responses'], skip_special_tokens=True)
-            # breakpoint()
-            next_obs, rewards, dones, infos = envs.step(text_actions, is_done | prompt_too_long)
+                batch_output = actor_rollout_wg.generate_sequences(batch_input)
 
-            if len(rewards.shape) == 2:
-                rewards = rewards.squeeze(1)
-            if len(dones.shape) == 2:
-                # dones is numpy, delete a dimension
-                dones = dones.squeeze(1)
+                batch_input.non_tensor_batch['uid'] = uid_batch
+                batch_input.non_tensor_batch['traj_uid'] = traj_uid
+                batch_input.pop(batch_keys=["attention_mask", 'input_ids', "position_ids"])
+                batch = batch_input.union(batch_output)
 
-            
-            if 'chat' in next_obs:
-                for i in range(batch_size):# this is specific to combo lock... other envs don't have chat.
-                    input_ids = self.tokenizer.apply_chat_template(
-                        next_obs['chat'][i],
-                        add_generation_prompt=True,
-                        tokenize=True
-                    )
-                    if len(input_ids) >= self.config.data.max_prompt_length:
+                text_actions = self.tokenizer.batch_decode(batch.batch['responses'], skip_special_tokens=True)
+                next_obs, rewards, dones, infos = envs.step(text_actions, is_done)
+                if len(rewards.shape) == 2:
+                    rewards = rewards.squeeze(1)
+                if len(dones.shape) == 2:
+                    # dones is numpy, delete a dimension
+                    dones = dones.squeeze(1)
+
+                # create a temp save of each of these, 
+                # just in case we create a messsage history which is clearly too long, 
+                # and have to restore it. 
+                # This is in place of implementing an undo for the add user and add assistant message operations.
+                # temp_messages_list = deepcopy(messages_list)
+                # temp_input_ids_list = deepcopy(input_ids_list)
+                # temp_attention_mask_list = deepcopy(attention_mask_list)
+                # temp_loss_mask_list = deepcopy(loss_mask_list)
+                for i in range(batch_size): 
+                    if is_done[i]:
+                        continue
+                    response_len = len(batch.batch['responses'][0])
+                    add_assistant_message(i, text_actions[i], batch.batch['responses'][i][batch.batch['attention_mask'][i][-response_len:] == 1], should_add_loss_mask=True)
+                    add_user_messages(i, next_obs['chat'][i])
+                    # if the assistant message is too long, I shouldn't really restore it, 
+                    # I should rather clip it to length just in case the sequence is too long,
+                    # and we want to apply negative penalty to what was just generated. 
+                    # I should note that this part of the implementation is somewhat controversal 
+                    # because of DAPO's findings that you should to ignore overlong generations
+                    # but it feels right to do here.
+                    if len(input_ids_list[i]) >= self.config.data.max_prompt_length:
                         prompt_too_long[i] = (True)
+                        # and need to prune, but the messages_list can stay unpruned for book keeping.
+                        input_ids_list[i] = input_ids_list[i][:self.config.data.max_prompt_length]
+                        attention_mask_list[i] = attention_mask_list[i][:self.config.data.max_prompt_length]
+                        loss_mask_list[i] = loss_mask_list[i][:self.config.data.max_prompt_length - len(prompt_input_ids_list[i])]
+                # need to remember to not reward the sequences which are too long even if they just got a reward.
 
-
-            if 'is_action_valid' in infos[0]:
                 batch.non_tensor_batch['is_action_valid'] = np.array([info['is_action_valid'] for info in infos], dtype=bool)
-            else:
-                batch.non_tensor_batch['is_action_valid'] = np.ones(batch_size, dtype=bool)
 
-            # Create reward tensor, only assign rewards for active environments
-            episode_rewards += torch_to_numpy(rewards) * torch_to_numpy(active_masks)
-            episode_lengths[active_masks] += 1
+                # Create reward tensor, only assign rewards for active environments
+                episode_rewards += torch_to_numpy(rewards) * torch_to_numpy(active_masks) * np.logical_not(prompt_too_long)
+                episode_lengths[active_masks] += 1
 
-            assert len(rewards) == batch_size, f"env should return rewards for all environments, got {len(rewards)} rewards for {batch_size} environments"
-            batch.non_tensor_batch['rewards'] = torch_to_numpy(rewards, is_object=True)
-            batch.non_tensor_batch['active_masks'] = torch_to_numpy(active_masks, is_object=True)
-            if 'chat' in next_obs:
-                batch.non_tensor_batch['text_actions'] = text_actions
-            # Update episode lengths for active environments
+                assert len(rewards) == batch_size, f"env should return rewards for all environments, got {len(rewards)} rewards for {batch_size} environments"
+                
+                # Update done states
+                is_done = np.logical_or(is_done, dones)
+                is_done = np.logical_or(is_done, prompt_too_long) # need this updated so the active masks are updated, which is used for getting the loss tokens
+                
+                obs = next_obs
+
+                # Break if all environments are done
+                if is_done.all():
+                    break
+
+            prompt_input_ids = pad_sequence([torch.tensor(t) for t in prompt_input_ids_list], batch_first=True, padding_value=self.tokenizer.pad_token_id, padding_side='left')
+            # do I need to pad to prompt length? I don't think I do, so I won't If something breaks that would suck.
+
+            prompt_attention_mask = pad_sequence([torch.tensor([1] * len(t)) for t in prompt_input_ids_list], batch_first=True, padding_value=0, padding_side='left')
+            response_input_ids = pad_sequence([torch.tensor(in_ids[len(p_ids):]) for p_ids, in_ids in zip(prompt_input_ids_list, input_ids_list)], batch_first=True, padding_value=self.tokenizer.pad_token_id, padding_side='right')
+            response_mask = pad_sequence([torch.tensor(in_mask[len(p_ids):]) for p_ids, in_mask in zip(prompt_input_ids_list, attention_mask_list)], batch_first=True, padding_value=0, padding_side='right')
+            
+            complete_input_ids = torch.concat([prompt_input_ids, response_input_ids], dim=-1)
+            complete_attention_mask = torch.concat([prompt_attention_mask, response_mask], dim=-1)
+
+            # for i in range(batch_size):
+            #     ...
+            # I need to separate the prompt_ids and the response_ids, and make a tensor just for the responses
+            batch.batch['responses'] = response_input_ids
+            batch.batch['input_ids'] = complete_input_ids 
+            batch.batch['attention_mask'] = complete_attention_mask
+            batch.batch['position_ids'] = compute_position_id_with_mask(complete_attention_mask)
+            loss_mask = pad_sequence([torch.tensor(t) for t in loss_mask_list], batch_first=True, padding_value=0, padding_side='right')
+            batch.batch['loss_mask'] = loss_mask
+            batch.pop(batch_keys=["rollout_log_probs"])
+            batch.non_tensor_batch['data_source'] = gen_batch.non_tensor_batch['data_source']
+            batch.non_tensor_batch['active_masks'] = np.ones(batch_size, dtype=bool) # here we concat the input_ids every time, so all batch elements are always active.
+            # batch.non_tensor_batch['messages'] = np.array(messages_list)
             batch_list: list[dict] = to_list_of_dict(batch)
 
             for i in range(batch_size):
                 total_batch_list[i].append(batch_list[i])
                 total_infos[i].append(infos[i])
+            # total_batch_list = to_list_of_dict(batch)
+            # total_infos = infos
+        else:
+            # Trajectory collection loop
+            breakpoint() # print the combinations print()
+            for _step in range(self.config.env.max_steps):
+                active_masks = np.logical_not(is_done)
 
-            # Update done states
+                batch = self.preprocess_batch(gen_batch=gen_batch, obs=obs)
 
-            is_done = np.logical_or(is_done, dones)
-            is_done = np.logical_or(is_done, prompt_too_long) # need this updated so the active masks are updated, which is used for getting the loss tokens
-            
-            # Update observations for next step
-            if 'chat' in next_obs:
-                new_next_obs_chat = []
+                batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
+                non_tensor_batch_keys_to_pop = ["raw_prompt_ids"]
+                if "multi_modal_data" in batch.non_tensor_batch:
+                    non_tensor_batch_keys_to_pop.append("multi_modal_data")
+                if "raw_prompt" in batch.non_tensor_batch:
+                    non_tensor_batch_keys_to_pop.append("raw_prompt")
+                if "tools_kwargs" in batch.non_tensor_batch:
+                    non_tensor_batch_keys_to_pop.append("tools_kwargs")
+                batch_input = batch.pop(
+                    batch_keys=batch_keys_to_pop,
+                    non_tensor_batch_keys=non_tensor_batch_keys_to_pop,
+                )
+
+                batch_input.meta_info = gen_batch.meta_info
+
+                batch_output = actor_rollout_wg.generate_sequences(batch_input)
+
+                batch.non_tensor_batch['uid'] = uid_batch
+                batch.non_tensor_batch['traj_uid'] = traj_uid
+
+                batch = batch.union(batch_output)
+                
+                text_actions = self.tokenizer.batch_decode(batch.batch['responses'], skip_special_tokens=True)
+                # breakpoint()
+                next_obs, rewards, dones, infos = envs.step(text_actions, is_done)
+
+                if len(rewards.shape) == 2:
+                    rewards = rewards.squeeze(1)
+                if len(dones.shape) == 2:
+                    # dones is numpy, delete a dimension
+                    dones = dones.squeeze(1)
+
+                
+                if 'chat' in next_obs:
+                    for i in range(batch_size):# this is specific to combo lock... other envs don't have chat.
+                        input_ids = self.tokenizer.apply_chat_template(
+                            next_obs['chat'][i],
+                            add_generation_prompt=True,
+                            tokenize=True
+                        )
+                        if len(input_ids) >= self.config.data.max_prompt_length:
+                            prompt_too_long[i] = (True)
+
+
+                if 'is_action_valid' in infos[0]:
+                    batch.non_tensor_batch['is_action_valid'] = np.array([info['is_action_valid'] for info in infos], dtype=bool)
+                else:
+                    batch.non_tensor_batch['is_action_valid'] = np.ones(batch_size, dtype=bool)
+
+                # Create reward tensor, only assign rewards for active environments
+                episode_rewards += torch_to_numpy(rewards) * torch_to_numpy(active_masks)
+                episode_lengths[active_masks] += 1
+
+                assert len(rewards) == batch_size, f"env should return rewards for all environments, got {len(rewards)} rewards for {batch_size} environments"
+                batch.non_tensor_batch['rewards'] = torch_to_numpy(rewards, is_object=True)
+                batch.non_tensor_batch['active_masks'] = torch_to_numpy(active_masks, is_object=True)
+                if 'chat' in next_obs:
+                    batch.non_tensor_batch['text_actions'] = text_actions
+                batch.non_tensor_batch['step'] = np.ones(batch_size, dtype=int) * _step
+                # Update episode lengths for active environments
+                batch_list: list[dict] = to_list_of_dict(batch)
+
                 for i in range(batch_size):
-                    if is_done[i] or prompt_too_long[i]:
-                        new_next_obs_chat.append([{'role':"user", 'content': "What is 2 + 2? Please answer quickly."}])
-                    else:
-                        new_next_obs_chat.append(next_obs['chat'][i])
-                next_obs['chat'] = new_next_obs_chat
+                    total_batch_list[i].append(batch_list[i])
+                    total_infos[i].append(infos[i])
 
-            obs = next_obs
+                # Update done states
 
-            # Break if all environments are done
-            if is_done.all():
-                break
-        # if they don't terminate, we give a -1 reward in the combolock setting.
+                is_done = np.logical_or(is_done, dones)
+                is_done = np.logical_or(is_done, prompt_too_long) # need this updated so the active masks are updated, which is used for getting the loss tokens
+                
+                # Update observations for next step
+                if 'chat' in next_obs:
+                    new_next_obs_chat = []
+                    for i in range(batch_size):
+                        if is_done[i]:
+                            new_next_obs_chat.append([{'role':"user", 'content': "What is 2 + 2? Please answer quickly."}])
+                        else:
+                            new_next_obs_chat.append(next_obs['chat'][i])
+                    next_obs['chat'] = new_next_obs_chat
+
+                obs = next_obs
+
+                # Break if all environments are done
+                if is_done.all():
+                    break
+            # if they don't terminate, we give a -1 reward in the combolock setting.
         if self.config.env.non_terminal_penalty:
             episode_rewards[np.logical_not(is_done) | prompt_too_long] += -1
         

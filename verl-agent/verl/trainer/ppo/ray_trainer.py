@@ -288,6 +288,7 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
             response_length = grpo_calculation_mask.size(1)  # Get length from the initial response mask
             grpo_calculation_mask = data.batch["loss_mask"][:, -response_length:]  # This mask is the one intended for GRPO
         # Call compute_grpo_outcome_advantage with parameters matching its definition
+        # breakpoint()
         advantages, returns = core_algos.compute_grpo_outcome_advantage(
             token_level_rewards=data.batch["token_level_rewards"],
             response_mask=grpo_calculation_mask,
@@ -295,6 +296,7 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
             traj_index=data.non_tensor_batch['traj_uid'],
             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
         )
+
         data.batch["advantages"] = advantages
         data.batch["returns"] = returns
     elif adv_estimator == AdvantageEstimator.GRPO_PASSK:
@@ -929,7 +931,15 @@ class RayPPOTrainer:
 
         # find global_step_folder
         if self.config.trainer.resume_mode == "auto":
-            if global_step_folder is None:
+            if self.config.trainer.resume_from_path is not None:
+                print("Jakob: loading checkpoint from a different run.", self.config.trainer.resume_from_path)
+                assert isinstance(self.config.trainer.resume_from_path, str), "resume ckpt must be str type"
+                assert "global_step_" in self.config.trainer.resume_from_path, "resume ckpt must specify the global_steps"
+                global_step_folder = self.config.trainer.resume_from_path
+                if not os.path.isabs(global_step_folder):
+                    working_dir = os.getcwd()
+                    global_step_folder = os.path.join(working_dir, global_step_folder)
+            elif global_step_folder is None:
                 print("Training from scratch")
                 return 0
         else:
@@ -1088,7 +1098,8 @@ class RayPPOTrainer:
                         batch.batch['step_rewards'] = step_rewards_tensor
                     
                     batch = adjust_batch(self.config, batch)
-
+                    
+                    # if not self.config.actor_rollout_ref.rollout.single_context:
                     batch.batch["response_mask"] = compute_response_mask(batch)
                     # balance the number of valid tokens on each dp rank.
                     # Note that this breaks the order of data inside the batch.
@@ -1114,9 +1125,12 @@ class RayPPOTrainer:
                     with _timer("old_log_prob", timing_raw):
                         old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
                         entropys = old_log_prob.batch["entropys"]
-                        response_masks = batch.batch["response_mask"]
+                        if self.config.actor_rollout_ref.rollout.single_context:
+                            loss_mask = batch.batch['loss_mask']
+                        else:
+                            loss_mask = batch.batch["response_mask"]
                         loss_agg_mode = self.config.actor_rollout_ref.actor.loss_agg_mode
-                        entropy_loss = agg_loss(loss_mat=entropys, loss_mask=response_masks, loss_agg_mode=loss_agg_mode)
+                        entropy_loss = agg_loss(loss_mat=entropys, loss_mask=loss_mask, loss_agg_mode=loss_agg_mode)
                         old_log_prob_metrics = {"actor/entropy_loss": entropy_loss.detach().item()}
                         metrics.update(old_log_prob_metrics)
                         old_log_prob.batch.pop("entropys")
@@ -1145,7 +1159,6 @@ class RayPPOTrainer:
                                     "training/rollout_probs_diff_std": rollout_probs_diff_std.detach().item(),
                                 }
                             )
-
                     if self.use_reference_policy:
                         # compute reference log_prob
                         with _timer("ref", timing_raw):
@@ -1204,6 +1217,16 @@ class RayPPOTrainer:
                             step_advantage_w=self.config.algorithm.gigpo.step_advantage_w,
                             gigpo_mode=self.config.algorithm.gigpo.mode,
                         )
+                        # here, I need to add some logging to view the traces, 
+                        # like grouping the runs by trajectory, 
+                        # and saving that to non_tensor_batch info for later logging. 
+                        # make sure to store as np object.
+                        # shit they have no nice ordering, and they don't 
+                        # maintain any index of which step they are on. 
+                        # what the shit man.
+                        # also check the grpo calc is correct, ok correct. There is only 0, 0.7071 or -0.7071 for advantages.
+                        # breakpoint()
+                    # creating outputs for reading the trajectories.
 
                     # update critic
                     if self.use_critic:
@@ -1213,7 +1236,8 @@ class RayPPOTrainer:
                         metrics.update(critic_output_metrics)
 
                     # implement critic warmup
-                    if self.config.trainer.critic_warmup <= self.global_steps:
+                    print(compute_data_metrics(batch=batch, use_critic=self.use_critic)) 
+                    if self.config.trainer.critic_warmup <= self.global_steps and not self.config.trainer.only_gen_once:
                         # update actor
                         with _timer("update_actor", timing_raw):
                             batch.meta_info["multi_turn"] = self.config.actor_rollout_ref.rollout.multi_turn.enable
@@ -1238,14 +1262,14 @@ class RayPPOTrainer:
                             )
 
                     # validate
-                    if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and (is_last_step or self.global_steps % self.config.trainer.test_freq == 0):
+                    if not self.config.trainer.only_gen_once and self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and (is_last_step or self.global_steps % self.config.trainer.test_freq == 0):
                         with _timer("testing", timing_raw):
                             val_metrics: dict = self._validate()
                             if is_last_step:
                                 last_val_metrics = val_metrics
                         metrics.update(val_metrics)
 
-                    if self.config.trainer.save_freq > 0 and (is_last_step or self.global_steps % self.config.trainer.save_freq == 0):
+                    if not self.config.trainer.only_gen_once and self.config.trainer.save_freq > 0 and (is_last_step or self.global_steps % self.config.trainer.save_freq == 0):
                         with _timer("save_checkpoint", timing_raw):
                             self._save_checkpoint()
 
@@ -1265,9 +1289,21 @@ class RayPPOTrainer:
 
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)
+                
                 train_gen_file = os.path.join(self.config.trainer.default_local_dir, "train_gen.txt")
                 os.makedirs(os.path.dirname(train_gen_file), exist_ok=True)
-
+                full_trajectory_strings = []
+                traj_map = dict()
+                for i, traj_uid in enumerate(batch.non_tensor_batch['traj_uid']):
+                    if traj_uid in traj_map:
+                        full_trajectory_strings.append(traj_map[traj_uid])
+                        continue
+                    if self.config.actor_rollout_ref.rollout.single_context:
+                        full_trajectory_strings.append(self.tokenizer.decode(batch.batch['input_ids'][i], skip_special_tokens=True))
+                    else:
+                        full_trajectory_strings.append("\n==========================================\n".join(self.tokenizer.batch_decode(batch.batch['input_ids'][sorted([i for (i, idx) in enumerate(batch.non_tensor_batch["traj_uid"]) if idx == traj_uid], key=lambda x: batch.non_tensor_batch['step'][x])], skip_special_tokens=True)))
+                    traj_map[traj_uid] = full_trajectory_strings[-1]
+                batch.non_tensor_batch['full_trajectory_strings'] = np.array(full_trajectory_strings)
                 with open(train_gen_file, "a") as fout:
                     # breakpoint()
                     # need to construct a line per generation? or one per step? I think one per step is simple and conveys something useful.
@@ -1285,6 +1321,8 @@ class RayPPOTrainer:
                             new_messages.append([m for m in messages])
                         batch.non_tensor_batch['raw_prompt'] = new_messages
                     fout.write(json.dumps(batch.non_tensor_batch, indent="  ") + "\n")
+                if self.config.trainer.only_gen_once:
+                    return
                 progress_bar.update(1)
                 self.global_steps += 1
                 if is_last_step:

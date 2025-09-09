@@ -53,6 +53,9 @@ class CombinationLockWorker:
             self.env.reset()
         self.has_won = False
         return "", {}
+    def get_target(self):
+        return self.env.target_combination
+    
 
 
 class CombinationLockEnvs:
@@ -65,6 +68,8 @@ class CombinationLockEnvs:
     """
 
     def __init__(self,
+                 max_attempts,
+                 vocab,
                  seed=0,
                  env_num=1,
                  group_n=1,
@@ -87,8 +92,8 @@ class CombinationLockEnvs:
             worker = CombinationLockWorker.remote(
                 seed,
                 3,
-                12,
-                "01234556789",
+                max_attempts,
+                vocab,
             )
             self.workers.append(worker)
 
@@ -163,19 +168,24 @@ class CombinationLockEnvs:
         self.close()
 
 
-def build_combolock_envs(seed,
+def build_combolock_envs(max_attempts,
+                        vocab,
+                        seed,
                         env_num,
                         group_n,
                         is_train=True):
     """
-    Externally exposed constructor function to create parallel Gym environments.
-    - env_name: [gym_cards/Blackjack-v0, gym_cards/NumberLine-v0, gym_cards/EZPoints-v0, gym_cards/Points24-v0]
+    Externally exposed constructor function to create parallel Combolock environments.
+    - max_attempts: for combo lock
+    - vocab: for combo lock
     - seed: For reproducible randomness
     - env_num: Number of distinct environments
     - group_n: Number of environment replicas under the same seed
     - is_train: Determines the seed range used (train/test)
     """
     return CombinationLockEnvs(
+        max_attempts,
+        vocab,
         seed=seed,
         env_num=env_num,
         group_n=group_n,

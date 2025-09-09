@@ -70,6 +70,7 @@ class DataParallelPPOActor(BasePPOActor):
             if self.config.get("use_torch_compile", True)  #  use torch compile by default
             else verl_F.entropy_from_logits
         )
+        self.step_counter = 0
         self.device_name = get_device_name()
 
     def _forward_micro_batch(self, micro_batch, temperature, calculate_entropy=False) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -316,26 +317,35 @@ class DataParallelPPOActor(BasePPOActor):
     def update_policy(self, data: DataProto):
         # make sure we are in training mode
         self.actor_module.train()
+        data_og = data
 
-        temperature = data.meta_info["temperature"]  # temperature must be in the data.meta_info to avoid silent error
-        multi_turn = data.meta_info.get("multi_turn", False)
+        temperature = data_og.meta_info["temperature"]  # temperature must be in the data_og.meta_info to avoid silent error
+        multi_turn = data_og.meta_info.get("multi_turn", False) or self.config.single_context
+
 
         select_keys = ["responses", "input_ids", "attention_mask", "position_ids", "old_log_probs", "advantages"]
         if multi_turn:
             select_keys.append("loss_mask")
         if self.config.use_kl_loss:
             select_keys.append("ref_log_prob")
-        batch = data.select(batch_keys=select_keys).batch
-        has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
+        batch = data_og.select(batch_keys=select_keys).batch
+        has_multi_modal_inputs = "multi_modal_inputs" in data_og.non_tensor_batch.keys()
 
         # Split to make minibatch iterator for updating the actor
         # See PPO paper for details. https://arxiv.org/abs/1707.06347
-        if has_multi_modal_inputs:
-            num_mini_batches = data.batch.batch_size[0] // self.config.ppo_mini_batch_size
-            non_tensor_select_keys = ["multi_modal_inputs"]
-            dataloader = data.select(select_keys, non_tensor_select_keys).chunk(num_mini_batches)
+        if self.config.single_batch:
+            local_min_batch_size = data_og.batch.batch_size[0] # jakob: this custom for combo_lock.
         else:
-            dataloader = batch.split(self.config.ppo_mini_batch_size)
+            local_min_batch_size = self.config.ppo_mini_batch_size # jakob: this custom for combo_lock.
+
+        if has_multi_modal_inputs:
+            num_mini_batches = data_og.batch.batch_size[0] // local_min_batch_size
+            non_tensor_select_keys = ["multi_modal_inputs"]
+            dataloader = data_og.select(select_keys, non_tensor_select_keys).chunk(num_mini_batches)
+        else:
+            dataloader = batch.split(local_min_batch_size)
+        # breakpoint() 
+        # check the data and the input_ids
 
         metrics = {}
         for epoch in range(self.config.ppo_epochs):
@@ -343,17 +353,19 @@ class DataParallelPPOActor(BasePPOActor):
                 # split batch into micro_batches
                 mini_batch = data
                 if has_multi_modal_inputs:
-                    self.gradient_accumulation = self.config.ppo_mini_batch_size // self.config.ppo_micro_batch_size_per_gpu
+                    self.gradient_accumulation = local_min_batch_size // self.config.ppo_micro_batch_size_per_gpu
                     num_micro_batches = mini_batch.batch.batch_size[0] // self.config.ppo_micro_batch_size_per_gpu
                     micro_batches = data.select(select_keys, non_tensor_select_keys).chunk(num_micro_batches)
                 elif self.config.use_dynamic_bsz:
                     max_token_len = self.config.ppo_max_token_len_per_gpu * self.ulysses_sequence_parallel_size
                     micro_batches, _ = rearrange_micro_batches(batch=mini_batch, max_token_len=max_token_len)
                 else:
-                    self.gradient_accumulation = self.config.ppo_mini_batch_size // self.config.ppo_micro_batch_size_per_gpu
+                    self.gradient_accumulation = local_min_batch_size // self.config.ppo_micro_batch_size_per_gpu
                     # split batch into micro_batches
                     micro_batches = mini_batch.split(self.config.ppo_micro_batch_size_per_gpu)
-
+                # import pickle
+                # pickle.dump((data_og, micro_batches), open(f"temp_worldsize_{torch.distributed.get_world_size()}_rank_{torch.distributed.get_rank()}_index_{self.step_counter}.pkl", 'wb'))
+                # print("saved all data")
                 self.actor_optimizer.zero_grad()
 
                 for data in micro_batches:
@@ -418,7 +430,7 @@ class DataParallelPPOActor(BasePPOActor):
 
                     if self.config.use_dynamic_bsz:
                         # relative to the dynamic bsz
-                        loss = policy_loss * (len(data) / self.config.ppo_mini_batch_size)
+                        loss = policy_loss * (len(data) / local_min_batch_size)
                     else:
                         loss = policy_loss / self.gradient_accumulation
                     loss.backward()
@@ -430,7 +442,8 @@ class DataParallelPPOActor(BasePPOActor):
                         "actor/pg_clipfrac_lower": pg_clipfrac_lower.detach().item(),
                     }
                     append_to_dict(metrics, data)
-
+                
+                self.step_counter += 1
                 grad_norm = self._optimizer_step()
                 data = {"actor/grad_norm": grad_norm.detach().item()}
                 append_to_dict(metrics, data)

@@ -546,6 +546,8 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
         text_obs, rewards, dones, infos = self.envs.step(actions)
 
         new_action_or_belief = ~(self.action_or_belief & np.array(valids, dtype=np.bool)) # you go to belief state unless you generate a valid belief while in belief state.
+        if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
+            new_action_or_belief = self.action_or_belief * 0
         self.belief_generation_failures += (self.action_or_belief & ~np.array(valids, dtype=np.bool) & ~is_not_processing).sum()
         self.action_generation_failures += (~self.action_or_belief & ~np.array(valids, dtype=np.bool) & ~is_not_processing).sum()
         self.memory.append(deepcopy((text_obs, rewards, dones, infos, new_action_or_belief, valids, action_or_belief_texts)))
@@ -570,8 +572,8 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
         if init:
             # valids wil be none, and actions will also be none, so I just give the chat history which is default for every first interaction.
             for i in range(len(text_obs)):
-                postprocess_text_obs.append([{'role': "system", 'content': COMBO_AGENT_FIRST_MESSAGE},
-                                             {'role': "user", 'content': COMBO_FIRST_USER_MESSAGE}])
+                postprocess_text_obs.append([{'role': "system", 'content': COMBO_AGENT_FIRST_MESSAGE.format_map({"vocab_list": list(self.config.env.vocab), "max_attempts": self.config.env.max_attempts})},
+                                            {'role': "user", 'content': COMBO_FIRST_USER_MESSAGE}])
         else:
             # list of 0 or 1 indicating action or belief being generated.
             # this is updated right before this function call, 
@@ -594,8 +596,12 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
                         # and are still generating a belief, in this case, 
                         # we need to correct some error in the belief generation.
                         new_belief_messages = deepcopy(self.prior_belief_messages[i])
+
                         new_belief_messages += [{'role': "assistant", 'content': full_text_actions[i]},
                                                 {'role': 'user', "content": COMBO_BELIEF_GENERATION_FAILURE_MSG}]
+                        if self.config.actor_rollout_ref.rollout.single_context:
+                            new_belief_messages = [{'role': 'user', "content": COMBO_BELIEF_GENERATION_FAILURE_MSG}]
+                        
                     else:
                         # we are for the first time generating a belief message
                         if valids[i]: 
@@ -611,23 +617,34 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
                                 # so we don't have the tags correct in this one.
                                 env_response = 'Could not parse response. Please ensure your response is in the format: <action> ... </action>.'
 
-                        new_belief_messages = [{'role': "user", 'content': COMBO_BELIEF_PROMPT.format(agent_first_message=COMBO_AGENT_FIRST_MESSAGE,
+                        new_belief_messages = [{'role': "user", 'content': COMBO_BELIEF_PROMPT.format(agent_first_message=COMBO_AGENT_FIRST_MESSAGE.format_map({"vocab_list": list(self.config.env.vocab), "max_attempts": self.config.env.max_attempts}),
                                                                                                     belief_state=prior_belief,
                                                                                                     agent_action=agent_action,
                                                                                                     env_response=env_response)}]
+                        if self.config.actor_rollout_ref.rollout.single_context:
+                            new_belief_messages = [{'role': "user", 'content': env_response}]
+                            if self.config.actor_rollout_ref.rollout.belief_multiple_messages:
+                                new_belief_messages += [{'role': 'user', 'content': COMBO_BELIEF_PROMPT_SINGLE_CONTEXT}]
                         # prior_belief = self.prior_beliefs[i]
                     self.prior_belief_messages[i] = new_belief_messages
                     postprocess_text_obs.append(new_belief_messages)
                 else:
                     # this is action generation prep
-                    assert valids[i], f"must be valid, but got {valids[i]=}"
-                    # you can only be generating an action after a successful belief generation with the first prompt being a special case in this repo.
-                    belief = actions_or_beliefs[i]
-                    self.prior_beliefs[i] = belief
-                    self.prior_belief_messages[i] = None
-                    new_action_messages = [{'role':'user', 'content': COMBO_ACTION_PROMPT.format(agent_first_message=COMBO_AGENT_FIRST_MESSAGE,
-                                                                                                 belief_state=belief)}]
-                    postprocess_text_obs.append(new_action_messages)
+                    if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
+                        env_response = text_obs[i]
+                        new_action_messages = [{'role': "user", 'content': env_response}]
+                        postprocess_text_obs.append(new_action_messages)
+                    else:
+                        assert valids[i], f"must be valid, but got {valids[i]=}"
+                        # you can only be generating an action after a successful belief generation with the first prompt being a special case in this repo.
+                        belief = actions_or_beliefs[i]
+                        self.prior_beliefs[i] = belief
+                        self.prior_belief_messages[i] = None
+                        new_action_messages = [{'role':'user', 'content': COMBO_ACTION_PROMPT.format(agent_first_message=COMBO_AGENT_FIRST_MESSAGE.format_map({"vocab_list": list(self.config.env.vocab), "max_attempts": self.config.env.max_attempts}),
+                                                                                                    belief_state=belief)}]
+                        if self.config.actor_rollout_ref.rollout.single_context:
+                            new_action_messages = [{'role': "user", 'content': COMBO_ACTION_PROMPT_SINGLE_CONTEXT}]
+                        postprocess_text_obs.append(new_action_messages)
         return postprocess_text_obs
     def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
         """
@@ -650,51 +667,6 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
 
         return {key: np.array(value) for key, value in success.items()} | {"action_generation_failures_success_rate": np.array([self.action_generation_failures/batch_size]*batch_size), 
                                                                            "belief_generation_failures_success_rate": np.array([self.belief_generation_failures/batch_size]*batch_size)} # just for the metric calc to be the same.
-    
-    # def build_text_obs(self, text_obs: List[str], init: bool = False) -> List[str]:
-    #     """
-    #     This function builds the text observation for the agent.
-    #     """
-    #     postprocess_text_obs = []
-    #     if init and self.supervisors is not None:
-    #         for i in range(len(text_obs)):
-    #             obs = APPWORLD_TEMPLATE_NO_HIS.format(
-    #                     supervisor_first_name=self.supervisors[i]['first_name'],
-    #                     supervisor_last_name=self.supervisors[i]['last_name'],
-    #                     supervisor_email=self.supervisors[i]['email'],
-    #                     supervisor_phone_number=self.supervisors[i]['phone_number'],
-    #                     task_description=self.tasks[i],
-    #                 )
-    #             postprocess_text_obs.append(obs)
-    #     else:
-    #         for i in range(len(text_obs)):
-    #             # Get last `history_length` steps
-    #             recent_history = self.memory[i][-self.config.env.history_length:]
-    #             valid_history_length = len(recent_history)
-    #             start_index = len(self.memory[i]) - valid_history_length
-    #             action_history = ""
-    #             for j, record in enumerate(recent_history):
-    #                 step_number = start_index + j + 1
-    #                 action = record["action"]
-    #                 env_obs = record["text_obs"]
-    #                 action_history += f"\nCode {step_number}: \n{action}\n\nResult {step_number}: \n{env_obs}\n"
-    #             if len(action_history) > 10000:
-    #                 action_history = "... " + action_history[-10000:]
-
-    #             obs = APPWORLD_TEMPLATE.format(
-    #                     supervisor_first_name=self.supervisors[i]['first_name'],
-    #                     supervisor_last_name=self.supervisors[i]['last_name'],
-    #                     supervisor_email=self.supervisors[i]['email'],
-    #                     supervisor_phone_number=self.supervisors[i]['phone_number'],
-    #                     task_description=self.tasks[i],
-    #                     step_count=len(self.memory[i]),
-    #                     history_length=valid_history_length,
-    #                     action_history=action_history.strip(),
-    #                     current_step=len(self.memory[i]) + 1,
-    #                     current_observation=text_obs[i],
-    #                 )
-    #             postprocess_text_obs.append(obs)
-    #     return postprocess_text_obs
 
 def make_envs(config):
     """
@@ -782,10 +754,10 @@ def make_envs(config):
         return envs, val_envs
     elif "combolock" in config.env.env_name.lower():
         from agent_system.environments.env_package.combolock import build_combolock_envs, combolock_projection
-        _envs = build_combolock_envs(seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, )
-        _val_envs = build_combolock_envs(seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False)
+        _envs = build_combolock_envs(config.env.max_attempts, config.env.vocab, seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, )
+        _val_envs = build_combolock_envs(config.env.max_attempts, config.env.vocab, seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False)
 
-        projection_f = partial(combolock_projection)
+        projection_f = partial(combolock_projection, vocab=config.env.vocab)
         envs = ComboLockEnvironmentManager(_envs, projection_f, config)
         val_envs = ComboLockEnvironmentManager(_val_envs, projection_f, config)
         return envs, val_envs

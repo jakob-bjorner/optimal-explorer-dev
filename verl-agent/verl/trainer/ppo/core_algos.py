@@ -117,7 +117,7 @@ def compute_grpo_outcome_advantage(
     traj_index: np.ndarray,
     epsilon: float = 1e-6,
     norm_adv_by_std_in_grpo: str = True,
-    compute_mean_std_cross_all_data: bool = True,
+    compute_mean_std_cross_all_data: bool = False,
 ):
     """
     Compute advantage for GRPO, operating only on Outcome reward

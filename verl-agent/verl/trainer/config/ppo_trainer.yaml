@@ -61,6 +61,8 @@ actor_rollout_ref:
     kl_loss_coef: 0.001 # for grpo
     kl_loss_type: low_var_kl # for grpo
     ppo_epochs: 1
+    single_batch: Flase
+    single_context: ${actor_rollout_ref.rollout.single_context}
     shuffle: False
     ulysses_sequence_parallel_size: 1 # sp size
     checkpoint:
@@ -98,6 +100,11 @@ actor_rollout_ref:
     log_prob_max_token_len_per_gpu: ${actor_rollout_ref.actor.ppo_max_token_len_per_gpu}
     ulysses_sequence_parallel_size: ${actor_rollout_ref.actor.ulysses_sequence_parallel_size} # sp size
   rollout:
+    # Jakob adding stuff to support single context training.
+    single_context: False
+    belief_multiple_messages: False
+    jakob_async: False
+
     name: vllm
     mode: sync # sync: LLM, async: AsyncLLM
     chat_scheduler: null # async chat scheduler, e.g examples.ppo_trainer.naive_chat_scheduler.NaiveChatCompletionScheduler
@@ -252,6 +259,7 @@ algorithm:
     max_num_gen_batches: 10
 
 trainer:
+  only_gen_once: False
   balance_batch: True
   total_epochs: 30
   total_training_steps: null
