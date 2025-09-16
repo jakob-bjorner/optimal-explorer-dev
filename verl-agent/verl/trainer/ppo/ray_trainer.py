@@ -1298,10 +1298,18 @@ class RayPPOTrainer:
                     if traj_uid in traj_map:
                         full_trajectory_strings.append(traj_map[traj_uid])
                         continue
+                    # breakpoint()
                     if self.config.actor_rollout_ref.rollout.single_context:
                         full_trajectory_strings.append(self.tokenizer.decode(batch.batch['input_ids'][i], skip_special_tokens=True))
                     else:
-                        full_trajectory_strings.append("\n==========================================\n".join(self.tokenizer.batch_decode(batch.batch['input_ids'][sorted([i for (i, idx) in enumerate(batch.non_tensor_batch["traj_uid"]) if idx == traj_uid], key=lambda x: batch.non_tensor_batch['step'][x])], skip_special_tokens=True)))
+                        indices_orderd_and_dedupped = []
+                        step_set = set()
+                        for step_idx_for_traj_str, index_id_for_traj_str in  sorted([(step, i) for i, (idx, step) in enumerate(zip(batch.non_tensor_batch["traj_uid"], batch.non_tensor_batch['step'])) if idx == traj_uid]):
+                            if step_idx_for_traj_str in step_set:
+                                continue
+                            step_set.add(step_idx_for_traj_str)
+                            indices_orderd_and_dedupped.append(index_id_for_traj_str)
+                        full_trajectory_strings.append("\n==========================================\n".join(self.tokenizer.batch_decode(batch.batch['input_ids'][indices_orderd_and_dedupped], skip_special_tokens=True)))
                     traj_map[traj_uid] = full_trajectory_strings[-1]
                 batch.non_tensor_batch['full_trajectory_strings'] = np.array(full_trajectory_strings)
                 with open(train_gen_file, "a") as fout:
@@ -1320,6 +1328,9 @@ class RayPPOTrainer:
                         for messages in batch.non_tensor_batch['raw_prompt']:
                             new_messages.append([m for m in messages])
                         batch.non_tensor_batch['raw_prompt'] = new_messages
+                    # if "info" in batch.non_tensor_batch: Commented out for seeing if removing the ndarray fixed the json write issue.
+                    #     [info.pop("is_action_valid") if "is_action_valid" in info else None for info in batch.non_tensor_batch["info"]]
+                    #     # batch.non_tensor_batch["info"] = 
                     fout.write(json.dumps(batch.non_tensor_batch, indent="  ") + "\n")
                 if self.config.trainer.only_gen_once:
                     return

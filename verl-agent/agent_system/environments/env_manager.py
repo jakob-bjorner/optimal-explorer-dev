@@ -23,6 +23,9 @@ from agent_system.environments.prompts import *
 from agent_system.environments.base import EnvironmentManagerBase, to_numpy
 from agent_system.memory import SimpleMemory
 from copy import deepcopy
+import re
+import requests
+
 def parse_gamefile(infos):
     gamefile = []
     for info in infos:
@@ -531,8 +534,8 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
 
         chat = self._build_chat_obs(text_obs, None, None, None, None, None, init=True)
         return {'text': ['']*len(chat), 'image': None, 'anchor': text_obs, 'chat': chat}, infos
-    
-    def step(self, text_actions: List[str], is_not_processing):
+
+    def step(self, text_actions: List[str], is_not_processing, tokenizer):
         # generate_belief = bool(self.step_idx % 2 != 0) This doesn't determine whether belief is generated or not lol. 
         # belief determination is a property of the environment tho, so should maintain belief or not as an array, 
         # where I can change belief or not depending on if a valid action is passed in either case.
@@ -566,6 +569,7 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
         dones = to_numpy(dones)
 
         return next_observations, rewards, dones, infos
+
 
     def _build_chat_obs(self, text_obs, full_text_actions, actions_or_beliefs, valids, old_action_or_belief, new_action_or_belief, init: bool = False)-> List[Dict[str,str]]:
         postprocess_text_obs = []
@@ -668,6 +672,217 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
         return {key: np.array(value) for key, value in success.items()} | {"action_generation_failures_success_rate": np.array([self.action_generation_failures/batch_size]*batch_size), 
                                                                            "belief_generation_failures_success_rate": np.array([self.belief_generation_failures/batch_size]*batch_size)} # just for the metric calc to be the same.
 
+
+
+class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
+    def __init__(self, envs, projection_f, config):
+        self.memory = []
+        super().__init__(envs, projection_f, config)
+
+    def reset(self):
+        text_obs, infos = self.envs.reset()
+        self.questions = text_obs
+        # text_obs is the questions in string form, already trimmed, should put the prompt text around this now.
+
+        # self.supervisors = [info['supervisor'] for info in infos]
+        self.memory = []
+        self.action_or_belief = np.zeros(len(text_obs), dtype=np.bool) # 0 means actions being generated, 1 means beliefs
+        self.prior_beliefs = [None] * len(text_obs)
+        self.prior_belief_messages: List = [None] * len(text_obs) # this for tracking when a belief is not being generated correctly.
+        self.tasks = text_obs.copy()
+        self.pre_text_obs = text_obs
+        self.belief_generation_failures = 0
+        self.action_generation_failures = 0
+        self.successful_searches = 0
+        is_not_processing = np.zeros(len(text_obs), dtype=np.bool)
+
+        chat = self._build_chat_obs(text_obs, None, None, None, None, None, None, is_not_processing, None, init=True)
+        return {'text': ['']*len(chat), 'image': None, 'anchor': text_obs, 'chat': chat}, infos
+
+
+
+    def step(self, text_actions: List[str], is_not_processing, tokenizer):
+        # generate_belief = bool(self.step_idx % 2 != 0) This doesn't determine whether belief is generated or not lol. 
+        # belief determination is a property of the environment tho, so should maintain belief or not as an array, 
+        # where I can change belief or not depending on if a valid action is passed in either case.
+        # breakpoint()
+        tags, action_or_belief_texts, valids = self.projection_f(text_actions, self.action_or_belief)
+
+
+        skip_sampling_mdp = self.action_or_belief | ~np.array(valids, dtype=bool) | is_not_processing
+        actions = list(zip(tags, action_or_belief_texts, skip_sampling_mdp))
+        text_obs, rewards, dones, infos = self.envs.step(actions) 
+        # perform the search in a grouped fashion, ensure the step isn't done, the question is processing, and that the action is search.
+        search_queries = [content for i, (action, content) in enumerate(zip(tags, action_or_belief_texts)) if action == 'search' and not skip_sampling_mdp[i]]
+        search_results = self.batch_search(search_queries)
+        for i, (action, content) in enumerate(zip(tags, action_or_belief_texts)):
+            # update the info dict with information on whether it was a action or belief being generated or not
+            infos[i]["action_or_belief"] = int(self.action_or_belief[i])
+            infos[i]['is_action_valid'] = int(valids[i])
+            if action == 'search' and not skip_sampling_mdp[i]:
+                hint = text_obs[i] # the environment tells you the turns remaining
+                text_obs[i] = f"{hint}\n\n{search_results.pop(0).strip()}"
+                self.successful_searches += 1
+        # prune the text_obs here, just in case they are too long.
+        for i in range(len(text_obs)):
+            if len(text_obs[i]) > self.config.env.max_obs_length:
+                # prune to length allowed for observation.
+                text_obs[i] = tokenizer.decode(tokenizer.encode(text_obs[i], add_special_tokens=False)[:self.config.env.max_obs_length])
+
+        new_action_or_belief = ~(self.action_or_belief & np.array(valids, dtype=np.bool)) # you go to belief state unless you generate a valid belief while in belief state.
+        if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
+            new_action_or_belief = self.action_or_belief * 0
+        self.belief_generation_failures += (self.action_or_belief & ~np.array(valids, dtype=np.bool) & ~is_not_processing).sum()
+        self.action_generation_failures += (~self.action_or_belief & ~np.array(valids, dtype=np.bool) & ~is_not_processing).sum()
+        self.memory.append(deepcopy((text_obs, rewards, dones, infos, new_action_or_belief, valids, action_or_belief_texts)))
+        self.pre_text_obs = text_obs
+
+        # full_text_obs = self.build_text_obs(text_obs)
+        chat = self._build_chat_obs(text_obs, text_actions, tags, action_or_belief_texts, valids, self.action_or_belief, new_action_or_belief, is_not_processing, tokenizer)
+        
+        self.action_or_belief = new_action_or_belief
+
+        beliefs = [belief if valid and tag == 'belief' else "" for i, (tag, belief, valid) in enumerate(zip(tags, action_or_belief_texts, valids))]
+        actions = [action if valid and (tag == 'search' or tag == "answer") else "" for i, (tag, action, valid) in enumerate(zip(tags, action_or_belief_texts, valids))]
+        next_observations = {'text': ['']*len(chat), "filtered_belief_generations": beliefs, "filtered_action_generations": actions, 'chat': chat, 'image': None, 'anchor': text_obs}
+        rewards = to_numpy(rewards)
+        dones = to_numpy(dones)
+
+        return next_observations, rewards, dones, infos
+
+    def batch_search(self, queries: List[str]) -> list[str]:
+        """
+        Batchified search for queries.
+        Args:
+            queries: queries to call the search engine
+        Returns:
+            search results which is concatenated into a string
+        """
+        results = self._batch_search(queries)['result']
+        
+        return [self._passages2string(result) for result in results]
+
+    def _batch_search(self, queries):
+        
+        payload = {
+            "queries": queries,
+            "topk": self.config.env.topk,
+            "return_scores": True
+        }
+        try:
+            return requests.post(self.config.env.search_url, json=payload).json()
+        except Exception as e:
+            print(f"Error in batch_search: {e}")
+            return []
+
+    def _passages2string(self, retrieval_result):
+        format_reference = ''
+        for idx, doc_item in enumerate(retrieval_result):
+            
+            content = doc_item['document']['contents']
+            title = content.split("\n")[0]
+            text = "\n".join(content.split("\n")[1:])
+            format_reference += f"Doc {idx+1}(Title: {title}) {text}\n"
+
+        return format_reference
+    def _build_chat_obs(self, text_obs, full_text_actions, tags, actions_or_beliefs, valids, old_action_or_belief, new_action_or_belief, is_not_processing, tokenizer, init: bool = False)-> List[Dict[str,str]]:
+        postprocess_text_obs = []
+        # valids wil be none, and actions will also be none, so I just give the chat history which is default for every first interaction.
+        for i in range(len(text_obs)):
+            if is_not_processing[i]:
+                postprocess_text_obs.append([{'role': "user", 'content': "yo"}]) # this will be replaced at the rollout_loop.py level, and this if statement is just here to filter from going through the logic needlessly
+                continue
+            if init:
+                postprocess_text_obs.append([{'role': "system", 'content': NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]})},
+                                            {'role': "user", 'content': NQHOTPOTQA_FIRST_USER_MESSAGE}])
+            else:
+                # list of 0 or 1 indicating action or belief being generated.
+                # this is updated right before this function call, 
+                # so the chat should be preparing the lm call to generate the indicated item.
+                # self.action_or_belief 
+                # self.memory
+                if new_action_or_belief[i]:
+                    # this is belief generation prep
+                    # system prompt automatically added when there is no spec.
+                    if len(self.memory) == 1:
+                        # first belief generation message.
+                        prior_belief = NQHOTPOTQA_NO_PRIOR_BELIEF_MESSAGE
+                    else:
+                        prior_belief = self.prior_beliefs[i]
+                    # we may have just come from a long string of belief generation failures, 
+                    # so we need to reconstruct the history of failures if this is the case.
+                    if old_action_or_belief[i]:
+                        # we were previously generating a belief, 
+                        # and are still generating a belief, in this case, 
+                        # we need to correct some error in the belief generation.
+                        new_belief_messages = deepcopy(self.prior_belief_messages[i])
+                        # just regenerate, you don't want to throw anything away, and you didn't do it right, 
+                        # so yeah, it might happen infinitely whatever. with temp 1 in our training and test setting, should be fine.
+                        # new_belief_messages += [{'role': "assistant", 'content': full_text_actions[i]},
+                        #                         {'role': 'user', "content": NQHOTPOTQA_BELIEF_GENERATION_FAILURE_MSG}]
+                        if self.config.actor_rollout_ref.rollout.single_context:
+                            new_belief_messages = [{'role': 'user', "content": NQHOTPOTQA_BELIEF_GENERATION_FAILURE_MSG}]
+                    else:
+                        # we are for the first time generating a belief message
+                        if valids[i]: 
+                            agent_action = actions_or_beliefs[i]
+                            env_response = text_obs[i]
+                        else:
+                            agent_action = "invalid action"
+                            env_response = NQHOTPOTQA_ENV_RESPONSE
+
+                        new_belief_messages = [{'role': "user", 'content': NQHOTPOTQA_BELIEF_PROMPT.format(agent_first_message=NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]}),
+                                                                                                    belief_state=prior_belief,
+                                                                                                    agent_action=agent_action,
+                                                                                                    env_response=env_response)}]
+                        if self.config.actor_rollout_ref.rollout.single_context:
+                            new_belief_messages = [{'role': "user", 'content': env_response}]
+                            if self.config.actor_rollout_ref.rollout.belief_multiple_messages:
+                                new_belief_messages += [{'role': 'user', 'content': NQHOTPOTQA_BELIEF_PROMPT_SINGLE_CONTEXT}]
+                        # prior_belief = self.prior_beliefs[i]
+                    self.prior_belief_messages[i] = new_belief_messages
+                    postprocess_text_obs.append(new_belief_messages)
+                else:
+                    # this is action generation prep
+                    if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
+                        env_response = text_obs[i]
+                        new_action_messages = [{'role': "user", 'content': env_response}]
+                        postprocess_text_obs.append(new_action_messages)
+                    else:
+                        assert valids[i], f"must be valid, but got {valids[i]=}"
+                        # you can only be generating an action after a successful belief generation with the first prompt being a special case in this repo.
+                        belief = actions_or_beliefs[i]
+                        self.prior_beliefs[i] = belief
+                        self.prior_belief_messages[i] = None
+                        new_action_messages = [{'role':'user', 'content': NQHOTPOTQA_ACTION_PROMPT.format(agent_first_message=NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]}),
+                                                                                                          belief_state=belief)}]
+                        if self.config.actor_rollout_ref.rollout.single_context:
+                            new_action_messages = [{'role': "user", 'content': NQHOTPOTQA_ACTION_PROMPT_SINGLE_CONTEXT}]
+                        postprocess_text_obs.append(new_action_messages)
+        return postprocess_text_obs
+    def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
+        """
+        Evaluate if the episodes are successful or not. 
+        (Default) implementation is to check info['won'] of the last step.
+        
+        Returns:
+        - success (np.ndarray or torch.Tensor): 1 if the episode is successful, 0 otherwise.
+        """
+        total_infos = kwargs['total_infos']
+        total_batch_list = kwargs['total_batch_list']
+        batch_size = len(total_batch_list)
+        
+        success = defaultdict(list)
+        
+        for bs in range(batch_size):
+            self._process_batch(bs, total_batch_list, total_infos, success)
+        
+        assert len(success['success_rate']) == batch_size
+
+        return {key: np.array(value) for key, value in success.items()} | {"action_generation_failures_success_rate": np.array([self.action_generation_failures/batch_size]*batch_size), 
+                                                                           "belief_generation_failures_success_rate": np.array([self.belief_generation_failures/batch_size]*batch_size),
+                                                                           "successful_searches_success_rate": np.array([self.successful_searches/batch_size]*batch_size)} # just for the metric calc to be the same.
+
 def make_envs(config):
     """
     Create enviroments 
@@ -760,6 +975,15 @@ def make_envs(config):
         projection_f = partial(combolock_projection, vocab=config.env.vocab)
         envs = ComboLockEnvironmentManager(_envs, projection_f, config)
         val_envs = ComboLockEnvironmentManager(_val_envs, projection_f, config)
+        return envs, val_envs
+    elif "nqhotpotqa" in config.env.env_name.lower():
+        from agent_system.environments.env_package.nqhotpotqa import build_nqhotpotqa_envs, nqhotpotqa_projection
+        _envs = build_nqhotpotqa_envs(config.env.max_attempts, seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, )
+        _val_envs = build_nqhotpotqa_envs(config.env.max_attempts, seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False)
+
+        projection_f = partial(nqhotpotqa_projection)
+        envs = NQHotpotQAEnvironmentManager(_envs, projection_f, config)
+        val_envs = NQHotpotQAEnvironmentManager(_val_envs, projection_f, config)
         return envs, val_envs
     else:
         print("Environment not supported")

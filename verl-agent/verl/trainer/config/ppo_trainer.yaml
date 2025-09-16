@@ -104,6 +104,7 @@ actor_rollout_ref:
     single_context: False
     belief_multiple_messages: False
     jakob_async: False
+    instruct: True
 
     name: vllm
     mode: sync # sync: LLM, async: AsyncLLM

@@ -405,7 +405,7 @@ class TrajectoryCollector:
             prompt_input_ids_list = deepcopy(input_ids_list)
             small_input_ids: list[int] = self.tokenizer.apply_chat_template([{'role':"user", 'content': "What is 2 + 2? Please answer quickly."}], add_generation_prompt=True, tokenize=True)
             small_attention_mask = [1] * len(small_input_ids)
-            breakpoint()
+
             for _step in range(self.config.env.max_steps):
                 active_masks = np.logical_not(is_done)
                 # need to construct ["input_ids", "attention_mask", "position_ids"] in every loop
@@ -442,7 +442,7 @@ class TrajectoryCollector:
                 batch = batch_input.union(batch_output)
 
                 text_actions = self.tokenizer.batch_decode(batch.batch['responses'], skip_special_tokens=True)
-                next_obs, rewards, dones, infos = envs.step(text_actions, is_done)
+                next_obs, rewards, dones, infos = envs.step(text_actions, is_done, self.tokenizer)
                 if len(rewards.shape) == 2:
                     rewards = rewards.squeeze(1)
                 if len(dones.shape) == 2:
@@ -517,6 +517,7 @@ class TrajectoryCollector:
             batch.pop(batch_keys=["rollout_log_probs"])
             batch.non_tensor_batch['data_source'] = gen_batch.non_tensor_batch['data_source']
             batch.non_tensor_batch['active_masks'] = np.ones(batch_size, dtype=bool) # here we concat the input_ids every time, so all batch elements are always active.
+            batch.non_tensor_batch["info"] = infos
             # batch.non_tensor_batch['messages'] = np.array(messages_list)
             batch_list: list[dict] = to_list_of_dict(batch)
 
@@ -527,7 +528,6 @@ class TrajectoryCollector:
             # total_infos = infos
         else:
             # Trajectory collection loop
-            breakpoint() # print the combinations print()
             for _step in range(self.config.env.max_steps):
                 active_masks = np.logical_not(is_done)
 
@@ -547,8 +547,11 @@ class TrajectoryCollector:
                 )
 
                 batch_input.meta_info = gen_batch.meta_info
-
+                input_ids_str = self.tokenizer.batch_decode(batch_input.batch['input_ids'], skip_special_tokens=True)
+                # breakpoint()
                 batch_output = actor_rollout_wg.generate_sequences(batch_input)
+
+
 
                 batch.non_tensor_batch['uid'] = uid_batch
                 batch.non_tensor_batch['traj_uid'] = traj_uid
@@ -556,8 +559,8 @@ class TrajectoryCollector:
                 batch = batch.union(batch_output)
                 
                 text_actions = self.tokenizer.batch_decode(batch.batch['responses'], skip_special_tokens=True)
-                # breakpoint()
-                next_obs, rewards, dones, infos = envs.step(text_actions, is_done)
+
+                next_obs, rewards, dones, infos = envs.step(text_actions, is_done, self.tokenizer)
 
                 if len(rewards.shape) == 2:
                     rewards = rewards.squeeze(1)
@@ -590,8 +593,18 @@ class TrajectoryCollector:
                 batch.non_tensor_batch['rewards'] = torch_to_numpy(rewards, is_object=True)
                 batch.non_tensor_batch['active_masks'] = torch_to_numpy(active_masks, is_object=True)
                 if 'chat' in next_obs:
-                    batch.non_tensor_batch['text_actions'] = text_actions
+                    batch.non_tensor_batch['response_ids_str'] = text_actions
+                    batch.non_tensor_batch["response_ids_token_len"] = (self.tokenizer.pad_token_id != batch.batch['responses']).sum(-1).cpu().numpy()
+                    batch.non_tensor_batch['input_ids_str'] = input_ids_str
+                    batch.non_tensor_batch["input_ids_token_len"] = (self.tokenizer.pad_token_id != batch.batch['input_ids']).sum(-1).cpu().numpy()
+                if "filtered_belief_generations" in next_obs:
+                    # needed to eventually calculate belief len data per turn easier. 
+                    # This will be used in conjunction with the response_ids, which can give the thinking and answer/search tags
+                    batch.non_tensor_batch['filtered_belief_generations'] = next_obs['filtered_belief_generations'] 
+                    batch.non_tensor_batch['filtered_action_generations'] = next_obs['filtered_action_generations'] 
                 batch.non_tensor_batch['step'] = np.ones(batch_size, dtype=int) * _step
+                batch.non_tensor_batch["info"] = infos
+
                 # Update episode lengths for active environments
                 batch_list: list[dict] = to_list_of_dict(batch)
 
@@ -621,7 +634,7 @@ class TrajectoryCollector:
                     break
             # if they don't terminate, we give a -1 reward in the combolock setting.
         if self.config.env.non_terminal_penalty:
-            episode_rewards[np.logical_not(is_done) | prompt_too_long] += -1
+            episode_rewards[np.logical_not(is_done) | prompt_too_long] += -self.config.env.non_terminal_penalty
         
         success: Dict[str, np.ndarray] = envs.success_evaluator(
                     total_infos=total_infos,
