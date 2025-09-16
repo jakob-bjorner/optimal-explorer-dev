@@ -77,13 +77,15 @@ python3 -m examples.data_preprocess.prepare \
 # before launching need to run 
 # conda activate retriever
 # bash /nas/ucb/jbjorner3/dev/optimal-explorer-dev/MEM1/Mem1/train/retrieval_launch.sh
+# bash /nas/ucb/dayan/optimal-explorer-dev/MEM1/Mem1/train/retrieval_launch.sh
+#   run in the background: ctrl + z, then bg, then fg to bring it back.
 # this will use gpus 4, and 5 for hosting the RAG endpoint to conduct search on.
 # Then use GPU 0,1,2,3 for the training and rollout.
 # with base model
 # DEBUG=PPO2 INSTRUCT=False bash examples/grpo_trainer/run_nqhotpotqa.sh
 
 # Running evaluations on the instruct checkpoints
-# CKPT="_seed1_sc_False_belief_prompting_True/global_step_20" MAX_ATTEMPTS=10 bash examples/grpo_trainer/run_combolock_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True/global_step_100" MAX_ATTEMPTS=6 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -132,6 +134,7 @@ python3 -m verl.trainer.main_ppo \
     env.max_steps=$MAX_STEPS \
     env.non_terminal_penalty=0.0 \
     env.rollout.n=$group_size \
+    +env.split=test \
     +env.max_attempts=$MAX_ATTEMPTS \
     +env.max_obs_length=1000 \
     +env.topk=3 \

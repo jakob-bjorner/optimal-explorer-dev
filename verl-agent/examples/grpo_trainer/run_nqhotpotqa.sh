@@ -127,6 +127,7 @@ python3 -m verl.trainer.main_ppo \
     env.max_steps=12 \
     env.non_terminal_penalty=0.0 \
     env.rollout.n=$group_size \
+    +env.split=train \
     +env.max_attempts=6 \
     +env.max_obs_length=1000 \
     +env.topk=3 \

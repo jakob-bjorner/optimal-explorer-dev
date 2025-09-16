@@ -60,9 +60,9 @@ class NQHotpotQAWorker:
     Ray remote actor that replaces the worker function.
     Each actor holds an independent instance of the specified gym environment.
     """
-    def __init__(self, seed, max_attempts):
+    def __init__(self, seed, max_attempts, split):
         """Initialize the gym environment in this worker"""
-        self.ds = datasets.load_dataset("../MEM1/Mem1/train/data/nq_hotpotqa_train_multi_2", split="train")
+        self.ds = datasets.load_dataset("../MEM1/Mem1/train/data/nq_hotpotqa_train_multi_2", split=split)
         # self.env = NQHotpotQA(combination_length, max_attempts, vocab)
         # self.ds.shuffle(seed)
         self.max_attempts = max_attempts
@@ -154,6 +154,7 @@ class NQHotpotQAEnvs:
 
     def __init__(self,
                  max_attempts,
+                 split,
                  seed=0,
                  env_num=1,
                  group_n=1,
@@ -177,6 +178,7 @@ class NQHotpotQAEnvs:
             worker = NQHotpotQAWorker.remote(
                 seed,
                 max_attempts,
+                split
             )
             self.workers.append(worker)
 
@@ -252,6 +254,7 @@ class NQHotpotQAEnvs:
 
 
 def build_nqhotpotqa_envs(max_attempts,
+                        split,
                         seed,
                         env_num,
                         group_n,
@@ -267,6 +270,7 @@ def build_nqhotpotqa_envs(max_attempts,
     """
     return NQHotpotQAEnvs(
         max_attempts,
+        split,
         seed=seed,
         env_num=env_num,
         group_n=group_n,
