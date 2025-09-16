@@ -643,6 +643,7 @@ class TrajectoryCollector:
                     episode_lengths=episode_lengths,
                     )
         success["non_terminal_trajectories_success_rate"] = np.logical_not(is_done) | prompt_too_long # this should be prompt too long
+        # add metrics as KV pairs to the success dict.
         
         return total_batch_list, episode_rewards, episode_lengths, success, traj_uid
     
