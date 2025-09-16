@@ -62,7 +62,7 @@ class NQHotpotQAWorker:
     """
     def __init__(self, seed, max_attempts):
         """Initialize the gym environment in this worker"""
-        self.ds = datasets.load_dataset("/nas/ucb/jbjorner3/dev/optimal-explorer-dev/MEM1/Mem1/train/data/nq_hotpotqa_train_multi_2", split="train")
+        self.ds = datasets.load_dataset("../MEM1/Mem1/train/data/nq_hotpotqa_train_multi_2", split="train")
         # self.env = NQHotpotQA(combination_length, max_attempts, vocab)
         # self.ds.shuffle(seed)
         self.max_attempts = max_attempts
