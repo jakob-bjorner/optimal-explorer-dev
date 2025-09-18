@@ -534,7 +534,9 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
 
         chat = self._build_chat_obs(text_obs, None, None, None, None, None, init=True)
         return {'text': ['']*len(chat), 'image': None, 'anchor': text_obs, 'chat': chat}, infos
-
+    def get_belief_from_output_text(self, text_beliefs_raw: List[str]):
+        action_or_belief_texts, valids = self.projection_f(text_beliefs_raw, (self.action_or_belief*0 + 1))
+        return action_or_belief_texts, valids
     def step(self, text_actions: List[str], is_not_processing, tokenizer):
         # generate_belief = bool(self.step_idx % 2 != 0) This doesn't determine whether belief is generated or not lol. 
         # belief determination is a property of the environment tho, so should maintain belief or not as an array, 
@@ -558,13 +560,18 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
 
         # full_text_obs = self.build_text_obs(text_obs)
         chat = self._build_chat_obs(text_obs, text_actions, action_or_belief_texts, valids, self.action_or_belief, new_action_or_belief)
-        self.action_or_belief = new_action_or_belief
-
         # add action_valid to infos
         for i, info in enumerate(infos):
-            info['is_action_valid'] = to_numpy(valids[i])
+            infos[i]["action_or_belief"] = int(self.action_or_belief[i])
+            infos[i]['is_action_valid'] = int(valids[i])
 
-        next_observations = {'text': ['']*len(chat), 'chat': chat, 'image': None, 'anchor': text_obs}
+
+        self.action_or_belief = new_action_or_belief
+
+        
+        beliefs = [belief if valid and self.action_or_belief[i] == 1 else "" for i, (belief, valid) in enumerate(zip(action_or_belief_texts, valids))]
+        actions = [action if valid and self.action_or_belief[i] == 0 else "" for i, (action, valid) in enumerate(zip(action_or_belief_texts, valids))]
+        next_observations = {'text': ['']*len(chat), "filtered_belief_generations": beliefs, "filtered_action_generations": actions, 'chat': chat, 'image': None, 'anchor': text_obs}
         rewards = to_numpy(rewards)
         dones = to_numpy(dones)
 
@@ -658,6 +665,25 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
         Returns:
         - success (np.ndarray or torch.Tensor): 1 if the episode is successful, 0 otherwise.
         """
+        # breakpoint() 
+        # figure out how to calculate the regret so we can see how close to R1 performance we are while training.
+        def get_regret_end_val_from_episode_rewards(reward_per_traj_data: np.ndarray, max_attempts):
+            regret_arr_per_traj = []
+            # print(np.mean(reward_per_traj_data))
+            for reward in reward_per_traj_data:
+                # invert the attempts -> reward calculation. 
+                # reward = (max_attempts - attempts + 1) / max_attempts => attempts = -reward * max_attempts + 1 + max_attempts
+                if reward == -1.0:
+                    attempts = max_attempts
+                else:
+                    attempts = int(1 + max_attempts - reward * max_attempts)
+                # print(attempts)
+                regret_arr_per_traj.append([1] * attempts + [0] * (max_attempts - attempts))
+            # pprint(regret_arr_per_traj)
+            avg_regret = np.mean(regret_arr_per_traj, axis=0).cumsum()
+            # sem_regret = np.std(regret_arr_per_traj, axis=0) / np.sqrt(len(avg_regret)) * 1.96
+            return avg_regret[-1]
+
         total_infos = kwargs['total_infos']
         total_batch_list = kwargs['total_batch_list']
         batch_size = len(total_batch_list)
@@ -669,8 +695,11 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
         
         assert len(success['success_rate']) == batch_size
 
+        regret_tail_value = get_regret_end_val_from_episode_rewards(kwargs['episode_rewards'], self.config.env.max_attempts)
+
         return {key: np.array(value) for key, value in success.items()} | {"action_generation_failures_success_rate": np.array([self.action_generation_failures/batch_size]*batch_size), 
-                                                                           "belief_generation_failures_success_rate": np.array([self.belief_generation_failures/batch_size]*batch_size)} # just for the metric calc to be the same.
+                                                                           "belief_generation_failures_success_rate": np.array([self.belief_generation_failures/batch_size]*batch_size),
+                                                                           "regret_tail_value_success_rate": np.array([regret_tail_value/ batch_size]*batch_size),} # just for the metric calc to be the same.
 
 
 
@@ -705,7 +734,6 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
         # generate_belief = bool(self.step_idx % 2 != 0) This doesn't determine whether belief is generated or not lol. 
         # belief determination is a property of the environment tho, so should maintain belief or not as an array, 
         # where I can change belief or not depending on if a valid action is passed in either case.
-        # breakpoint()
         tags, action_or_belief_texts, valids = self.projection_f(text_actions, self.action_or_belief)
 
 
@@ -721,7 +749,11 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
             infos[i]['is_action_valid'] = int(valids[i])
             if action == 'search' and not skip_sampling_mdp[i]:
                 hint = text_obs[i] # the environment tells you the turns remaining
-                text_obs[i] = f"{hint}\n\n{search_results.pop(0).strip()}"
+                if self.config.env.is_mem1:
+                    text_obs[i] = NQHOTPOTQA_ENV_RESPONSE_SEARCH_MEM1.format_map({"hint": hint, "search_result": search_results.pop(0).strip()})
+                else:
+                    text_obs[i] = NQHOTPOTQA_ENV_RESPONSE_SEARCH.format_map({"hint": hint, "search_result": search_results.pop(0).strip()})
+                # f"{hint}\n\n{search_results.pop(0).strip()}"
                 self.successful_searches += 1
         # prune the text_obs here, just in case they are too long.
         for i in range(len(text_obs)):
@@ -732,6 +764,11 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
         new_action_or_belief = ~(self.action_or_belief & np.array(valids, dtype=np.bool)) # you go to belief state unless you generate a valid belief while in belief state.
         if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
             new_action_or_belief = self.action_or_belief * 0
+        if self.config.env.is_mem1:
+            new_action_or_belief = self.action_or_belief * 0 # we handle the logic for mem1 with only actions even though we want beliefs to be generated as well.
+            # if invalid in mem1, it just terminates.
+            is_not_processing = ~np.array(valids, dtype=np.bool) | is_not_processing
+            dones = [(d or not v) for d, v in zip(dones, valids)]
         self.belief_generation_failures += (self.action_or_belief & ~np.array(valids, dtype=np.bool) & ~is_not_processing).sum()
         self.action_generation_failures += (~self.action_or_belief & ~np.array(valids, dtype=np.bool) & ~is_not_processing).sum()
         self.memory.append(deepcopy((text_obs, rewards, dones, infos, new_action_or_belief, valids, action_or_belief_texts)))
@@ -793,8 +830,12 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
                 postprocess_text_obs.append([{'role': "user", 'content': "yo"}]) # this will be replaced at the rollout_loop.py level, and this if statement is just here to filter from going through the logic needlessly
                 continue
             if init:
-                postprocess_text_obs.append([{'role': "system", 'content': NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]})},
-                                            {'role': "user", 'content': NQHOTPOTQA_FIRST_USER_MESSAGE}])
+                if self.config.env.is_mem1:
+                    postprocess_text_obs.append([{'role': "user", 'content': get_NQHOTPOTQA_AGENT_FIRST_MESSAGE_MEM1(self.questions[i], self.config.actor_rollout_ref.rollout.instruct)}])
+                    # need to add the generation template manually, because it was done wrong in MEM1.
+                else:
+                    postprocess_text_obs.append([{'role': "system", 'content': NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]})},
+                                                {'role': "user", 'content': NQHOTPOTQA_FIRST_USER_MESSAGE}])
             else:
                 # list of 0 or 1 indicating action or belief being generated.
                 # this is updated right before this function call, 
@@ -844,21 +885,31 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
                     postprocess_text_obs.append(new_belief_messages)
                 else:
                     # this is action generation prep
-                    if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
-                        env_response = text_obs[i]
-                        new_action_messages = [{'role': "user", 'content': env_response}]
+                    if self.config.env.is_mem1:
+                        # you can only be generating an action after a successful belief generation with the first prompt being a special case in this repo.
+                        # this extraction strategy is taken from mem1
+                        belief = "<think>" + full_text_actions[i].split('<think>')[1] if '<think>' in full_text_actions[i] else full_text_actions[i]
+                        
+                        new_action_messages = [{'role': "user", 'content': get_NQHOTPOTQA_AGENT_FIRST_MESSAGE_MEM1(self.questions[i], self.config.actor_rollout_ref.rollout.instruct)},
+                                               {'role': 'assistant', "content": belief},
+                                               {'role': 'user', 'content': text_obs[i]}]
                         postprocess_text_obs.append(new_action_messages)
                     else:
-                        assert valids[i], f"must be valid, but got {valids[i]=}"
-                        # you can only be generating an action after a successful belief generation with the first prompt being a special case in this repo.
-                        belief = actions_or_beliefs[i]
-                        self.prior_beliefs[i] = belief
-                        self.prior_belief_messages[i] = None
-                        new_action_messages = [{'role':'user', 'content': NQHOTPOTQA_ACTION_PROMPT.format(agent_first_message=NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]}),
-                                                                                                          belief_state=belief)}]
-                        if self.config.actor_rollout_ref.rollout.single_context:
-                            new_action_messages = [{'role': "user", 'content': NQHOTPOTQA_ACTION_PROMPT_SINGLE_CONTEXT}]
-                        postprocess_text_obs.append(new_action_messages)
+                        if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
+                            env_response = text_obs[i]
+                            new_action_messages = [{'role': "user", 'content': env_response}]
+                            postprocess_text_obs.append(new_action_messages)
+                        else:
+                            assert valids[i], f"must be valid, but got {valids[i]=}"
+                            # you can only be generating an action after a successful belief generation with the first prompt being a special case in this repo.
+                            belief = actions_or_beliefs[i]
+                            self.prior_beliefs[i] = belief
+                            self.prior_belief_messages[i] = None
+                            new_action_messages = [{'role':'user', 'content': NQHOTPOTQA_ACTION_PROMPT.format(agent_first_message=NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]}),
+                                                                                                            belief_state=belief)}]
+                            if self.config.actor_rollout_ref.rollout.single_context:
+                                new_action_messages = [{'role': "user", 'content': NQHOTPOTQA_ACTION_PROMPT_SINGLE_CONTEXT}]
+                            postprocess_text_obs.append(new_action_messages)
         return postprocess_text_obs
     def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
         """

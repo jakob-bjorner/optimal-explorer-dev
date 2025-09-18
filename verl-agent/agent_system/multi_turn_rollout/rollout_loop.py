@@ -245,15 +245,16 @@ class TrajectoryCollector:
         Returns:
             DataProto: Collected and organized trajectory data
         """
+        not_is_belief_grading_context_list = [not info.get('is_belief_grading_context', False) for info in [trajectory_list[0]['info'] for trajectory_list in total_batch_list]]
         batch_size = len(total_batch_list)
 
-        episode_rewards_mean = np.mean(episode_rewards)
-        episode_rewards_min = np.min(episode_rewards)
-        episode_rewards_max = np.max(episode_rewards)
+        episode_rewards_mean = np.mean(episode_rewards[not_is_belief_grading_context_list])
+        episode_rewards_min = np.min(episode_rewards[not_is_belief_grading_context_list])
+        episode_rewards_max = np.max(episode_rewards[not_is_belief_grading_context_list])
 
-        episode_lengths_mean = np.mean(episode_lengths)
-        episode_lengths_min = np.min(episode_lengths)
-        episode_lengths_max = np.max(episode_lengths)
+        episode_lengths_mean = np.mean(episode_lengths[not_is_belief_grading_context_list])
+        episode_lengths_min = np.min(episode_lengths[not_is_belief_grading_context_list])
+        episode_lengths_max = np.max(episode_lengths[not_is_belief_grading_context_list])
 
         success_rate = {}
         for key, value in success.items():
@@ -266,12 +267,14 @@ class TrajectoryCollector:
                 assert traj_uid[bs] == data['traj_uid'], "data is not from the same trajectory"
                 if data['active_masks']:
                     # episode_rewards
-                    data['episode_rewards'] = episode_rewards[bs]
+                    if not_is_belief_grading_context_list[bs]:
+                        data['episode_rewards'] = episode_rewards[bs]
                     data['episode_rewards_mean'] = episode_rewards_mean
                     data['episode_rewards_min'] = episode_rewards_min
                     data['episode_rewards_max'] = episode_rewards_max
                     # episode_lengths
-                    data['episode_lengths'] = episode_lengths[bs]
+                    if not_is_belief_grading_context_list[bs]:
+                        data['episode_lengths'] = episode_lengths[bs]
                     data['episode_lengths_mean'] = episode_lengths_mean
                     data['episode_lengths_min'] = episode_lengths_min
                     data['episode_lengths_max'] = episode_lengths_max
@@ -548,7 +551,6 @@ class TrajectoryCollector:
 
                 batch_input.meta_info = gen_batch.meta_info
                 input_ids_str = self.tokenizer.batch_decode(batch_input.batch['input_ids'], skip_special_tokens=True)
-                # breakpoint()
                 batch_output = actor_rollout_wg.generate_sequences(batch_input)
 
 
@@ -635,7 +637,7 @@ class TrajectoryCollector:
             # if they don't terminate, we give a -1 reward in the combolock setting.
         if self.config.env.non_terminal_penalty:
             episode_rewards[np.logical_not(is_done) | prompt_too_long] += -self.config.env.non_terminal_penalty
-        
+
         success: Dict[str, np.ndarray] = envs.success_evaluator(
                     total_infos=total_infos,
                     total_batch_list=total_batch_list,
@@ -645,6 +647,63 @@ class TrajectoryCollector:
         success["non_terminal_trajectories_success_rate"] = np.logical_not(is_done) | prompt_too_long # this should be prompt too long
         # add metrics as KV pairs to the success dict.
         
+        # second RL after the RL steps. this could be done every few steps or something more heuristicy.
+        # figure out how to separate out the belief states, 
+        # so we can reprompt the model to generate more belief states, 
+        # and grade the outputs of all the belief states.
+        # would be nice to have a simple setting for belief state grading,
+        # but for now dealing with the full setting and see if it just works. 
+        # not sure how to make a simpler setting easily out of combination lock... 
+        # Perhaps only 3 vocab tokens to guess, so make sure that the belief 
+        # contains all the digits, like a string matching thing.  (This will be backup plan. )
+        
+        # implementing the belief grade call notes:
+        # total_batch_list is a list length 4 * 2 for effective batch size. each containing a list of dicts which correspond to the contexts.
+        # they seem to have the batch and non_tensor_info in a flat dict, so can just loop through here and look for active belief (ie not ['info']['action_or_belief']])
+        # lets just assume I can do this right now, and see what I'd need to do to generatemore sequences from here.
+        # Flag belief contexts for metrics info['is_belief_grading_context'] = True
+
+        # after beliefs are generated, use this function to parse them in the same manor as is done in the environment 
+        # function use self.envs.get_belief_from_output_text(self, text_beliefs_raw: List[str]):
+        # ensure these are all true, before you pass back the stats.
+        # pad total_episode_rewards and total_episode_lengths use zero or whatever doesn't matter.
+        # populate total_traj_uid with new uids total_traj_uid
+        # add belief_grading_contexts to total_batch_list, ensure they have info flag. 
+        # GRPO should handle them nicely. 
+        # Ensure the uid and traj_uid are new, and don't conflict with the prior ones.
+
+        # Try this function before returning 
+        # self.gather_rollout_data(
+        #     total_batch_list=total_batch_list,
+        #     episode_rewards=total_episode_rewards,
+        #     episode_lengths=total_episode_lengths,
+        #     success=total_success,
+        #     traj_uid=total_traj_uid,
+        # )
+
+        # before restarting the session to get the action_or_belief information, I want to check that generation works nicely on this single GPU setting.
+        # keys_for_generation = ["input_ids", "attention_mask", "position_ids", "raw_prompt"]
+        # gen_for_belief_grading = DataProto.from_single_dict(data=collate_fn([{k: e[k] for k in keys_for_generation} for e in [total_batch_list[0][0], total_batch_list[0][3], total_batch_list[2][2]]]))
+        # yup seems good, I can generate some beliefs then.
+        # We are going to reward for the correct posterior, and that is it. 
+        # This can encourage parsable posteriors over time, and will essentially help the model to just record all the info in a very easy mannor.
+        # breakpoint()
+        # generate a pair for each, re label the traj_uid
+        # if self.config.trainer.belief_state_grading:
+        #   flattened_valid_belief_contexts = [c for trajectory in total_batch_list for c in trajectory if (c['active_masks'] and c['info']["is_action_valid"] and c['info']["action_or_belief"])]
+        #   # technically we don't have to filter on the successful beliefs, but lets do this for now.
+        #   # we want to create a deepcopy of the full set of valid beleif contexts, then remove unnecessary info, and populate with new traj_uid and uid info and reshuffle into total_batch_list format.
+        #   flattened_valid_belief_contexts = deepcopy(flattened_valid_belief_contexts)
+        #   # set most of these to none. there are some other things we need to do, like make sure the attention_mask, input_ids, are cut to length, and remove the response, and rollout_log_probs, and change uid to parent_uid and traj_uid to parent_traj_uid (['attention_mask', 'prompts', 'input_ids', 'responses', 'rollout_log_probs', 'position_ids', 'anchor_obs', 'index', 'data_source', 'uid', 'traj_uid', 'raw_prompt', 'is_action_valid', 'rewards', 'active_masks', 'response_ids_str', 'response_ids_token_len', 'input_ids_str', 'input_ids_token_len', 'filtered_belief_generations', 'filtered_action_generations', 'step', 'info'])
+        #   # set to nan 'response_ids_str', 'response_ids_token_len', 'input_ids_str', 'input_ids_token_len', 'anchor_obs' => "", ("is_action_valid", 'rewards', 'active_masks', 'filtered_belief_generations', 'filtered_action_generations', 'step') will all have new values, and need to change things in info
+        #   num_beliefs_to_compare = len(flattened_valid_belief_contexts)
+        #   new_uid = np.array([str(uuid.uuid4()) for _ in range(num_beliefs_to_compare)], dtype=object)
+        #   
+        #   
+        #   new_traj_uid = np.array([str(uuid.uuid4()) for _ in range(batch_size)], dtype=object)
+
+
+
         return total_batch_list, episode_rewards, episode_lengths, success, traj_uid
     
     def dynamic_multi_turn_loop(

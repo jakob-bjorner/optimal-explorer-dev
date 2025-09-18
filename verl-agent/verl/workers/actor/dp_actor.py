@@ -344,7 +344,6 @@ class DataParallelPPOActor(BasePPOActor):
             dataloader = data_og.select(select_keys, non_tensor_select_keys).chunk(num_mini_batches)
         else:
             dataloader = batch.split(local_min_batch_size)
-        # breakpoint() 
         # check the data and the input_ids
 
         metrics = {}

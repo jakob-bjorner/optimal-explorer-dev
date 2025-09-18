@@ -463,7 +463,11 @@ class DataProto:
 
         selected_non_tensor = {}
         for key, val in self.non_tensor_batch.items():
-            selected_non_tensor[key] = val[idxs_np]
+            if isinstance(val, list):
+                selected_non_tensor[key] = [val[i] for i in idxs_np] # this to support string specific issues with np arrays being huge.
+            else:
+                selected_non_tensor[key] = val[idxs_np]
+
 
         return type(self)(batch=selected_batch, non_tensor_batch=selected_non_tensor, meta_info=self.meta_info)
 

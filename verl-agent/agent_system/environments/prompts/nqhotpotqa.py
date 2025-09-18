@@ -21,6 +21,32 @@ Important:
 - Do not search multiple queries or questions simultaneously.
 
 Answer the following questions: {question}"""
+
+def get_NQHOTPOTQA_AGENT_FIRST_MESSAGE_MEM1(questions: str, instruct: bool):
+   NQHOTPOTQA_AGENT_FIRST_MESSAGE_MEM1="""You will answer multiple complex questions using iterative reasoning, summarization, and web search.
+
+At each step, you will see the questions, a cumulative summary of relevant information, the current search query, and search results (except in the first step, where only the questions are provided). Your task is to:
+
+1. Perform reasoning and update a cumulative, concise summary within <think> ... </think>. This acts as persistent memory and must include all essential information from previous <think> and <information> tags.
+
+2. Then choose one of the following actions:
+   - If any question remains unanswered, issue a single query for one question inside <search> ... </search>. The query should consist of keywords or a short phrase. Only search one question at a time.
+   - If all questions are answered, provide the final answers—separated by semicolons—within <answer> answer1; answer2; ... </answer>. The answers must be concise, contain only essential words, and avoid any explanations.
+
+Important:
+- Always follow this structure after <information> or the initial questions: <think> ... </think><search> ... </search> or <think> ... </think><answer> ... </answer>.
+- Do not search multiple queries or questions simultaneously.
+
+Answer the following questions: {questions}\n"""
+
+   return (("" if instruct else "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n") 
+            + NQHOTPOTQA_AGENT_FIRST_MESSAGE_MEM1.format_map({"questions": questions})
+            + ("" if instruct else "<|im_end|>\n<|im_start|>assistant\n"))
+
+NQHOTPOTQA_ENV_RESPONSE_SEARCH="{hint}\n\n{search_result}"
+
+NQHOTPOTQA_ENV_RESPONSE_SEARCH_MEM1='\n\n<information>{hint}\n\n{search_result}</information>\n\n'
+
 # """At each step, you will see the questions, a cumulative belief state of relevant information, the current search query, and search results (except in the first step, where only the questions are provided). Your task is to:
 
 # 1. Perform reasoning and update a cumulative, concise belief state within <belief> ... </belief>. This acts as persistent memory and must include all essential information from previous <belief> and <information> tags.

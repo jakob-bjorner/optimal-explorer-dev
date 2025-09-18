@@ -7,15 +7,17 @@ SEED=${SEED:-1}
 DEBUG=${DEBUG:-}
 SINGLE_CTX=${SINGLE_CTX:-False}
 MULTI_MSG=${MULTI_MSG:-True}
-if [ $SINGLE_CTX ]; then
+if [ $SINGLE_CTX == True ]; then
     MAX_PROMPT_LEN=16384
 else
     MAX_PROMPT_LEN=2048
 fi
 
-train_data_size=16
+train_data_size=${train_data_size:-16}
 val_data_size=8
 group_size=2
+B=${B:-7}
+GRADE_BELIEF=${GRADE_BELIEF:-False}
 # invalid_action_penalty_coef=0.0
 # also their kl is 0.01 lol.
 # Need to change the max_prompt_len hyper param for real run. ahh its probably ok actually.
@@ -54,6 +56,11 @@ python3 -m examples.data_preprocess.prepare \
 # critic.model.fsdp_config.param_offload=True \
 # critic.model.fsdp_config.optimizer_offload=True \
 
+# going to interactive debug some run with belief state grading. Need to get something training before tonight to see how it does against a baseline.
+# have we even trained something in this environment? What do we have going in this setting?
+# lets do a 3 b model for testing, and have belief states generated. 
+#  B=3 train_data_size=4 GRADE_BELIEF=True DEBUG=combolock_vs_r1 bash examples/grpo_trainer/run_combolock.sh
+
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/verl-agent/text/train.parquet \
@@ -65,7 +72,7 @@ python3 -m verl.trainer.main_ppo \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.return_raw_chat=True \
-    actor_rollout_ref.model.path=qwen/qwen2.5-7b-instruct \
+    actor_rollout_ref.model.path=qwen/qwen2.5-${B}b-instruct \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=16 \
@@ -102,13 +109,14 @@ python3 -m verl.trainer.main_ppo \
     env.rollout.n=$group_size \
     +env.vocab="0123456789" \
     +env.max_attempts=12 \
+    trainer.belief_state_grading=$GRADE_BELIEF \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_agent_alfworld' \
-    trainer.experiment_name=grpo_qwen2.5_7b_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}${DEBUG} \
-    trainer.n_gpus_per_node=4 \
+    trainer.experiment_name=grpo_qwen2.5_${B}b_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}_BG_${GRADE_BELIEF}${DEBUG} \
+    trainer.n_gpus_per_node=1 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
-    trainer.test_freq=5 \
+    trainer.test_freq=10000 \
     trainer.total_epochs=400 \
     trainer.val_before_train=False $@
