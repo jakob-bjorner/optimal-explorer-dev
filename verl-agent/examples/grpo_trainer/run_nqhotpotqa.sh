@@ -128,7 +128,7 @@ python3 -m verl.trainer.main_ppo \
     env.non_terminal_penalty=0.0 \
     env.rollout.n=$group_size \
     +env.split=train \
-    +env.max_attempts=6 \
+    +env.num_objectives=2 \
     +env.max_obs_length=1000 \
     +env.topk=3 \
     +env.search_url="http://127.0.0.1:8013/retrieve" \

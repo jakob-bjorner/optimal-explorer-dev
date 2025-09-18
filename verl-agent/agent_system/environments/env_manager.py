@@ -978,8 +978,8 @@ def make_envs(config):
         return envs, val_envs
     elif "nqhotpotqa" in config.env.env_name.lower():
         from agent_system.environments.env_package.nqhotpotqa import build_nqhotpotqa_envs, nqhotpotqa_projection
-        _envs = build_nqhotpotqa_envs(config.env.max_attempts, split=config.env.split, seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, )
-        _val_envs = build_nqhotpotqa_envs(config.env.max_attempts, split=config.env.split, seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False)
+        _envs = build_nqhotpotqa_envs(split=config.env.split, num_objectives=config.env.num_objectives, seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, )
+        _val_envs = build_nqhotpotqa_envs(split=config.env.split,  num_objectives=config.env.num_objectives, seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False)
 
         projection_f = partial(nqhotpotqa_projection)
         envs = NQHotpotQAEnvironmentManager(_envs, projection_f, config)
