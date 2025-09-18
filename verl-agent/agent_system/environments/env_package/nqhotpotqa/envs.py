@@ -256,8 +256,8 @@ class NQHotpotQAEnvs:
         self.close()
 
 
-def build_nqhotpotqa_envs(max_attempts,
-                        split,
+def build_nqhotpotqa_envs(split,
+                        num_objectives,
                         seed,
                         env_num,
                         group_n,
