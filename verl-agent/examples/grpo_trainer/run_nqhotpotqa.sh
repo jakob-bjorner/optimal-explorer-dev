@@ -142,6 +142,7 @@ python3 -m verl.trainer.main_ppo \
     env.rollout.n=$group_size \
     +env.split=train \
     +env.max_attempts=$MAX_ATTEMPTS \
+    +env.num_objectives=2 \
     +env.max_obs_length=1000 \
     +env.topk=3 \
     +env.is_mem1=$IS_MEM1 \

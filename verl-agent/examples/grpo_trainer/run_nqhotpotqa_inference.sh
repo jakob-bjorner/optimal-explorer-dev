@@ -84,8 +84,8 @@ python3 -m examples.data_preprocess.prepare \
 # with base model
 # DEBUG=PPO2 INSTRUCT=False bash examples/grpo_trainer/run_nqhotpotqa.sh
 
-# Running evaluations on the instruct checkpoints
-# CKPT="_seed1_sc_False_belief_prompting_True/global_step_100" MAX_ATTEMPTS=6 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# Running evaluations on the instruct checkpoints. change MAX_ATTEMPTS based on the number of objectives.
+# CKPT="_seed1_sc_False_belief_prompting_True/global_step_100" NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -135,14 +135,14 @@ python3 -m verl.trainer.main_ppo \
     env.non_terminal_penalty=0.0 \
     env.rollout.n=$group_size \
     +env.split=test \
-    +env.max_attempts=$MAX_ATTEMPTS \
+    +env.num_objectives=$NUM_OBJECTIVES \
     +env.max_obs_length=1000 \
     +env.topk=3 \
     +env.search_url="http://127.0.0.1:8013/retrieve" \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_agent_alfworld' \
-    trainer.experiment_name=nqhotpotqa_grpo_qwen2.5-7b-${MODEL_DESC}_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}${DEBUG} \
+    trainer.experiment_name=nqhotpotqa_grpo_qwen2.5-7b-${MODEL_DESC}_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}${DEBUG}_ckpt_${CKPT}_inference \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \

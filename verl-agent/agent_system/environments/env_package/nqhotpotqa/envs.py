@@ -60,12 +60,15 @@ class NQHotpotQAWorker:
     Ray remote actor that replaces the worker function.
     Each actor holds an independent instance of the specified gym environment.
     """
-    def __init__(self, seed, max_attempts, split):
+    def __init__(self, seed, split, num_objectives):
         """Initialize the gym environment in this worker"""
-        self.ds = datasets.load_dataset("../MEM1/Mem1/train/data/nq_hotpotqa_train_multi_2", split=split)
+        self.ds = datasets.load_dataset("../MEM1/Mem1/train/data/nq_hotpotqa_train_multi_"+str(num_objectives), split=split)
         # self.env = NQHotpotQA(combination_length, max_attempts, vocab)
         # self.ds.shuffle(seed)
-        self.max_attempts = max_attempts
+        if num_objectives <= 4:
+            self.max_attempts = 6
+        else:
+            self.max_attempts = 20
         self.attempt = 0
         self.index_ordering = np.random.default_rng(seed).permutation(len(self.ds))
         # self.env.reset(seed)
@@ -153,8 +156,8 @@ class NQHotpotQAEnvs:
     """
 
     def __init__(self,
-                 max_attempts,
                  split,
+                 num_objectives,
                  seed=0,
                  env_num=1,
                  group_n=1,
@@ -177,8 +180,8 @@ class NQHotpotQAEnvs:
         for _ in range(self.num_processes):
             worker = NQHotpotQAWorker.remote(
                 seed,
-                max_attempts,
-                split
+                split,
+                num_objectives
             )
             self.workers.append(worker)
 
@@ -253,8 +256,8 @@ class NQHotpotQAEnvs:
         self.close()
 
 
-def build_nqhotpotqa_envs(max_attempts,
-                        split,
+def build_nqhotpotqa_envs(split,
+                        num_objectives,
                         seed,
                         env_num,
                         group_n,
@@ -269,8 +272,8 @@ def build_nqhotpotqa_envs(max_attempts,
     - is_train: Determines the seed range used (train/test)
     """
     return NQHotpotQAEnvs(
-        max_attempts,
         split,
+        num_objectives,
         seed=seed,
         env_num=env_num,
         group_n=group_n,
