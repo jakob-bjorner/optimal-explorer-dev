@@ -84,8 +84,32 @@ python3 -m examples.data_preprocess.prepare \
 # with base model
 # DEBUG=PPO2 INSTRUCT=False bash examples/grpo_trainer/run_nqhotpotqa.sh
 
-# Running evaluations on the instruct checkpoints. change MAX_ATTEMPTS based on the number of objectives.
-# CKPT="_seed1_sc_False_belief_prompting_True/global_step_100" NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# Running evaluations on the instruct checkpoints. 
+# CKPT="_seed1_sc_False_belief_prompting_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=1 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=2 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=16 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+
+
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=1 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=2 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=16 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=1 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=2 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueGRPO_INSTRUCT/global_step_260" NUM_OBJECTIVES=16 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+
+#CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" INSTRUCT=False NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" NUM_OBJECTIVES=2 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" NUM_OBJECTIVES=16 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -117,7 +141,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
-    actor_rollout_ref.rollout.val_kwargs.temperature=0.4 \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.01 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.rollout.max_num_batched_tokens=$max_num_batched_tokens \
     actor_rollout_ref.rollout.single_context=$SINGLE_CTX \
@@ -142,12 +166,12 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_agent_alfworld' \
-    trainer.experiment_name=nqhotpotqa_grpo_qwen2.5-7b-${MODEL_DESC}_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}${DEBUG}_ckpt_${CKPT}_inference \
+    trainer.experiment_name=nqhotpotqa_grpo_qwen2.5-7b-${MODEL_DESC}_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}${DEBUG}_ckpt_${CKPT}_objectives_${NUM_OBJECTIVES}_inference \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
     trainer.test_freq=5 \
     trainer.total_epochs=400 \
     trainer.only_gen_once=True \
-    trainer.resume_from_path=/nas/ucb/jbjorner3/dev/optimal-explorer-dev/verl-agent/checkpoints/verl_agent_alfworld/nqhotpotqa_grpo_qwen2.5-7b-instruct_16sfr${CKPT} \
+    trainer.resume_from_path=/nas/ucb/jbjorner3/dev/optimal-explorer-dev/verl-agent/checkpoints/verl_agent_alfworld/nqhotpotqa_grpo_qwen2.5-7b-${MODEL_DESC}_16sfr${CKPT} \
     trainer.val_before_train=False $@
