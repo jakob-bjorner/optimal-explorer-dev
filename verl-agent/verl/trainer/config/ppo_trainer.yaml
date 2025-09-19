@@ -156,6 +156,8 @@ actor_rollout_ref:
       format: chatml  # chatml, more formats will be supported in the future
 
 critic:
+  # jakob: had to put this here for critic's init
+  instruct: ${actor_rollout_ref.rollout.instruct}
   rollout_n: ${actor_rollout_ref.rollout.n}
   strategy: fsdp # [fsdp, fsdp2]
   optim:
@@ -260,6 +262,7 @@ algorithm:
     max_num_gen_batches: 10
 
 trainer:
+  belief_state_grading: False
   only_gen_once: False
   balance_batch: True
   total_epochs: 30

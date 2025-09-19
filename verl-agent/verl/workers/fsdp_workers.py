@@ -174,6 +174,7 @@ class ActorRolloutRefWorker(Worker):
         fsdp_config,
         optim_config,
         override_model_config,
+        config,
         use_remove_padding=False,
         use_fused_kernels=False,
         enable_gradient_checkpointing=False,
@@ -197,7 +198,7 @@ class ActorRolloutRefWorker(Worker):
 
         # note that we have to create model in fp32. Otherwise, the optimizer is in bf16, which is incorrect
         # TODO(zhangchi.usc1992): 1. support create from random initialized model. 2. Support init with FSDP directly
-        self.tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
+        self.tokenizer = hf_tokenizer(local_path, config.rollout.get("instruct", True), trust_remote_code=trust_remote_code)
         self.processor = hf_processor(local_path, trust_remote_code=trust_remote_code)
 
         torch_dtype = fsdp_config.get("model_dtype", None)
@@ -530,6 +531,7 @@ class ActorRolloutRefWorker(Worker):
                 fsdp_config=fsdp_config,
                 optim_config=optim_config,
                 override_model_config=override_model_config,
+                config=self.config,
                 use_remove_padding=use_remove_padding,
                 use_fused_kernels=use_fused_kernels,
                 enable_gradient_checkpointing=self.config.model.get("enable_gradient_checkpointing", False),
@@ -567,6 +569,7 @@ class ActorRolloutRefWorker(Worker):
                 model_path=local_path,
                 fsdp_config=self.config.ref.fsdp_config,
                 optim_config=None,
+                config=self.config,
                 override_model_config=override_model_config,
                 use_remove_padding=use_remove_padding,
                 use_fused_kernels=use_fused_kernels,
@@ -849,7 +852,7 @@ class CriticWorker(Worker):
         # using random initialized model from any architecture. May not be the same as Actor.
 
         tokenizer_path = copy_to_local(config.model.tokenizer_path, use_shm=use_shm)
-        self.tokenizer = hf_tokenizer(tokenizer_path, trust_remote_code=config.model.get("trust_remote_code", False))
+        self.tokenizer = hf_tokenizer(tokenizer_path, config.get("instruct", True), trust_remote_code=config.model.get("trust_remote_code", False))
         self.processor = hf_processor(tokenizer_path, trust_remote_code=config.model.get("trust_remote_code", False))
 
         from omegaconf import OmegaConf
@@ -1176,8 +1179,8 @@ class RewardModelWorker(Worker):
         else:
             self._do_switch_chat_template = True
             input_tokenizer_local_path = copy_to_local(config.model.input_tokenizer, use_shm=use_shm)
-            self.input_tokenizer = hf_tokenizer(input_tokenizer_local_path, trust_remote_code=config.model.get("trust_remote_code", False))
-            self.tokenizer = hf_tokenizer(local_path, trust_remote_code=config.model.get("trust_remote_code", False))
+            self.input_tokenizer = hf_tokenizer(input_tokenizer_local_path, config.rollout.get("instruct", True), trust_remote_code=config.model.get("trust_remote_code", False))
+            self.tokenizer = hf_tokenizer(local_path, config.rollout.get("instruct", True), trust_remote_code=config.model.get("trust_remote_code", False))
 
         trust_remote_code = config.model.get("trust_remote_code", False)
         model_config = AutoConfig.from_pretrained(local_path, trust_remote_code=trust_remote_code)

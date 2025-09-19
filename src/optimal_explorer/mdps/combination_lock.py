@@ -206,8 +206,8 @@ class CombinationLock:
     def _is_valid_guess(self, guess: str) -> bool:
         """Check if a guess is valid."""
         return (len(guess) == self.combination_length and 
-                all(c in self.vocab for c in guess))# and 
-                #len(set(guess)) == self.combination_length)  # All characters must be distinct
+                all(c in self.vocab for c in guess) and 
+                len(set(guess)) == self.combination_length)  # All characters must be distinct
     
     def _get_feedback(self, guess: str) -> List[int]:
         """

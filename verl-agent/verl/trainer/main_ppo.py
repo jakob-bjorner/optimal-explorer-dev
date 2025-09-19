@@ -64,7 +64,10 @@ class TaskRunner:
         from verl.utils import hf_processor, hf_tokenizer
 
         trust_remote_code = config.data.get("trust_remote_code", False)
-        tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
+        if not config.env.get("is_mem1", False):
+            assert config.actor_rollout_ref.rollout.get("instruct", True), "I haven't implemented the ABBEL base support yet."
+
+        tokenizer = hf_tokenizer(local_path, config.actor_rollout_ref.rollout.get("instruct", True), config.actor_rollout_ref.rollout.get("instruct", True), trust_remote_code=trust_remote_code)
         processor = hf_processor(local_path, trust_remote_code=trust_remote_code, use_fast=True)  # used for multimodal LLM, could be none
 
         # vllm early verify

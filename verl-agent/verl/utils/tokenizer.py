@@ -33,7 +33,7 @@ def set_pad_token_id(tokenizer):
         warnings.warn(f"tokenizer.pad_token is None. Now set to {tokenizer.eos_token}", stacklevel=1)
 
 
-def hf_tokenizer(name_or_path, correct_pad_token=True, correct_gemma2=True, **kwargs):
+def hf_tokenizer(name_or_path, instruct, correct_pad_token=True, correct_gemma2=True, **kwargs):
     """Create a huggingface pretrained tokenizer which correctness handles eos and pad tokens.
 
     Args:
@@ -58,6 +58,9 @@ def hf_tokenizer(name_or_path, correct_pad_token=True, correct_gemma2=True, **kw
     tokenizer = AutoTokenizer.from_pretrained(name_or_path, **kwargs)
     if correct_pad_token:
         set_pad_token_id(tokenizer)
+    if not instruct:
+        # should be able to support abbel_base_model_chat_template, but not doing this for ease right now.
+        tokenizer.chat_template = open("/nas/ucb/jbjorner3/dev/optimal-explorer-dev/verl-agent/mem1_base_model_chat_template.jinja", 'r').read()
     return tokenizer
 
 

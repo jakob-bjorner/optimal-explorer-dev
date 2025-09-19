@@ -7,16 +7,25 @@ SEED=${SEED:-1}
 DEBUG=${DEBUG:-}
 SINGLE_CTX=${SINGLE_CTX:-False}
 MULTI_MSG=${MULTI_MSG:-True}
+MAX_STEPS=${MAX_STEPS:-6}
+MAX_ATTEMPTS=$(($MAX_STEPS*2))
 if [ $SINGLE_CTX ]; then
     MAX_PROMPT_LEN=16384
 else
     MAX_PROMPT_LEN=4096
 fi
 
-train_data_size=16
+
+
+train_data_size=${train_data_size:-16}
 val_data_size=8
 group_size=2
+IS_MEM1=${IS_MEM1:-False}
 INSTRUCT=${INSTRUCT:-True}
+
+if [ $IS_MEM1 == True ]; then
+    MAX_ATTEMPTS=$MAX_STEPS
+fi
 if [ $INSTRUCT == True ]; then
     MODEL_DESC=instruct
     MODEL_PATH=qwen/qwen2.5-7b-instruct
@@ -24,6 +33,8 @@ else
     MODEL_DESC=""
     MODEL_PATH=qwen/qwen2.5-7b
 fi
+
+
 
 # invalid_action_penalty_coef=0.0
 # also their kl is 0.01 lol.
@@ -57,7 +68,7 @@ python3 -m examples.data_preprocess.prepare \
 # critic.optim.lr=1e-5 \
 # critic.model.use_remove_padding=True \
 # critic.optim.lr_warmup_steps_ratio=0.05 \
-# critic.model.path=qwen/qwen2.5-7b-instruct \
+# critic.model.path=$MODEL_PATH \
 # critic.model.enable_gradient_checkpointing=True \
 # critic.ppo_micro_batch_size_per_gpu=2 \
 # critic.model.fsdp_config.param_offload=True \
@@ -69,11 +80,21 @@ python3 -m examples.data_preprocess.prepare \
 # bash /nas/ucb/jbjorner3/dev/optimal-explorer-dev/MEM1/Mem1/train/retrieval_launch.sh
 # this will use gpus 4, and 5 for hosting the RAG endpoint to conduct search on.
 # Then use GPU 0,1,2,3 for the training and rollout.
+# normal model:
+# DEBUG=GRPO_INSTRUCT bash examples/grpo_trainer/run_nqhotpotqa.sh
 # with base model
 # DEBUG=PPO2 INSTRUCT=False bash examples/grpo_trainer/run_nqhotpotqa.sh
+# with base model and mem1 enables with ppo (REMEMBER TO CHANGE TO PPO CRITIC WHEN LAUNCHING!!!)
+# DEBUG=MEM1GRPO32 IS_MEM1=True INSTRUCT=False bash examples/grpo_trainer/run_nqhotpotqa.sh
+# DEBUG=MEM1GRPO64 train_data_size=64 IS_MEM1=True INSTRUCT=False bash examples/grpo_trainer/run_nqhotpotqa.sh
 
-    # algorithm.adv_estimator=grpo \
+# peak token lengths experiment: training for 260
+# DEBUG=GRPO_INSTRUCT bash examples/grpo_trainer/run_nqhotpotqa.sh
+# DEBUG=GRPO_INSTRUCT IS_MEM1=True bash examples/grpo_trainer/run_nqhotpotqa.sh 
+# the instruct version of this model should be tuned at least sensibly, because there could be minor things which cause it's performance to be worse than we expect. And we want the sensible thing to happen that it performs better than MEM1.
+
 python3 -m verl.trainer.main_ppo \
+    algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/verl-agent/text/train.parquet \
     data.val_files=$HOME/data/verl-agent/text/test.parquet \
     data.train_batch_size=$train_data_size \
@@ -113,32 +134,26 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_invalid_action_penalty=False \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.0 \
     actor_rollout_ref.actor.single_batch=True \
-    critic.optim.lr=1e-5 \
-    critic.model.use_remove_padding=True \
-    critic.optim.lr_warmup_steps_ratio=0.05 \
-    critic.model.path=$MODEL_PATH \
-    critic.model.enable_gradient_checkpointing=True \
-    critic.ppo_micro_batch_size_per_gpu=2 \
-    critic.model.fsdp_config.param_offload=True \
-    critic.model.fsdp_config.optimizer_offload=True \
     algorithm.use_kl_in_reward=False \
     env.env_name=nqhotpotqa \
     env.seed=$SEED \
-    env.max_steps=12 \
+    env.max_steps=$MAX_STEPS \
     env.non_terminal_penalty=0.0 \
     env.rollout.n=$group_size \
     +env.split=train \
+    +env.max_attempts=$MAX_ATTEMPTS \
     +env.num_objectives=2 \
     +env.max_obs_length=1000 \
     +env.topk=3 \
+    +env.is_mem1=$IS_MEM1 \
     +env.search_url="http://127.0.0.1:8013/retrieve" \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_agent_alfworld' \
-    trainer.experiment_name=nqhotpotqa_grpo_qwen2.5-7b-${MODEL_DESC}_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}${DEBUG} \
+    trainer.experiment_name=nqhotpotqa_grpo_qwen2.5-7b-${MODEL_DESC}_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}_is_mem1_${IS_MEM1}${DEBUG} \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
-    trainer.test_freq=5 \
+    trainer.test_freq=10000 \
     trainer.total_epochs=400 \
     trainer.val_before_train=False $@

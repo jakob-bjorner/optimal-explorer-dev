@@ -288,7 +288,6 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
             response_length = grpo_calculation_mask.size(1)  # Get length from the initial response mask
             grpo_calculation_mask = data.batch["loss_mask"][:, -response_length:]  # This mask is the one intended for GRPO
         # Call compute_grpo_outcome_advantage with parameters matching its definition
-        # breakpoint()
         advantages, returns = core_algos.compute_grpo_outcome_advantage(
             token_level_rewards=data.batch["token_level_rewards"],
             response_mask=grpo_calculation_mask,
@@ -1086,7 +1085,6 @@ class RayPPOTrainer:
                     # # repeat to align with repeated responses in rollout
                     # batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
                     # batch = batch.union(gen_batch_output)
-                    # breakpoint()
                     del batch
                     batch = gen_batch_output
 
@@ -1225,7 +1223,6 @@ class RayPPOTrainer:
                         # maintain any index of which step they are on. 
                         # what the shit man.
                         # also check the grpo calc is correct, ok correct. There is only 0, 0.7071 or -0.7071 for advantages.
-                        # breakpoint()
                     # creating outputs for reading the trajectories.
 
                     # update critic
@@ -1298,7 +1295,6 @@ class RayPPOTrainer:
                     if traj_uid in traj_map:
                         full_trajectory_strings.append(traj_map[traj_uid])
                         continue
-                    # breakpoint()
                     if self.config.actor_rollout_ref.rollout.single_context:
                         full_trajectory_strings.append(self.tokenizer.decode(batch.batch['input_ids'][i], skip_special_tokens=True))
                     else:
@@ -1313,7 +1309,6 @@ class RayPPOTrainer:
                     traj_map[traj_uid] = full_trajectory_strings[-1]
                 batch.non_tensor_batch['full_trajectory_strings'] = np.array(full_trajectory_strings)
                 with open(train_gen_file, "a") as fout:
-                    # breakpoint()
                     # need to construct a line per generation? or one per step? I think one per step is simple and conveys something useful.
                     # how do I convert all the message objects to dicts whereever they are in the nested dict? I could just do a discusting tree map code myself. its not so bad, but I don't want to.
                     for key in batch.non_tensor_batch:
