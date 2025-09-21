@@ -17,12 +17,13 @@ class CombinationLockWorker:
     def step(self, action):
         """Execute a step in the environment"""
         action, is_belief_generation_step = action
+        info = self.env._get_observation() | {"posterior": self.env.posterior}
         if is_belief_generation_step:
             # the belief generation step is checked only on the top level env manager. 
             # This is just a noop so other environments can step if they need to.
-            return "", 0, False, {"won":self.has_won}
+            return "", 0, False, info | {"won":self.has_won}
         if self.env.is_terminated():
-            return "", 0, True, {"won":self.has_won}
+            return "", 0, True, info | {"won":self.has_won}
         obs, _, done, info = self.env.step(action)
         str_response_in_tool_call = ""
         for i, (g, f) in enumerate(zip(action, info['feedback'])):

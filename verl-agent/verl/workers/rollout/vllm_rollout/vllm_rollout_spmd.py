@@ -290,6 +290,8 @@ class vLLMRollout(BaseRollout):
                 lora_requests = [LoRARequest(lora_name=f"{lora_int_id}",lora_int_id=lora_int_id,lora_path="/simon-stub-path")] * batch_size
 
         # users can customize different sampling_params at different run
+        if prompts.meta_info.get("extra_sample_params", None):
+            kwargs.update(prompts.meta_info["extra_sample_params"])
         with self.update_sampling_params(**kwargs):
             # print(self.sampling_params)
             outputs = self.inference_engine.generate(
