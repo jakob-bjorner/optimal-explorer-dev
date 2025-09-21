@@ -570,7 +570,7 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
         
         beliefs = [belief if valid and self.action_or_belief[i] == 1 else "" for i, (belief, valid) in enumerate(zip(action_or_belief_texts, valids))]
         actions = [action if valid and self.action_or_belief[i] == 0 else "" for i, (action, valid) in enumerate(zip(action_or_belief_texts, valids))]
-        
+
         self.action_or_belief = new_action_or_belief
         next_observations = {'text': ['']*len(chat), "filtered_belief_generations": beliefs, "filtered_action_generations": actions, 'chat': chat, 'image': None, 'anchor': text_obs}
         rewards = to_numpy(rewards)
@@ -776,6 +776,7 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
         self.pre_text_obs = text_obs
 
         # full_text_obs = self.build_text_obs(text_obs)
+        # breakpoint()
         chat = self._build_chat_obs(text_obs, text_actions, tags, action_or_belief_texts, valids, self.action_or_belief, new_action_or_belief, is_not_processing, tokenizer)
         
 
