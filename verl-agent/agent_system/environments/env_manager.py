@@ -566,11 +566,11 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
             infos[i]['is_action_valid'] = int(valids[i])
 
 
-        self.action_or_belief = new_action_or_belief
 
         
         beliefs = [belief if valid and self.action_or_belief[i] == 1 else "" for i, (belief, valid) in enumerate(zip(action_or_belief_texts, valids))]
         actions = [action if valid and self.action_or_belief[i] == 0 else "" for i, (action, valid) in enumerate(zip(action_or_belief_texts, valids))]
+        self.action_or_belief = new_action_or_belief
         next_observations = {'text': ['']*len(chat), "filtered_belief_generations": beliefs, "filtered_action_generations": actions, 'chat': chat, 'image': None, 'anchor': text_obs}
         rewards = to_numpy(rewards)
         dones = to_numpy(dones)
@@ -775,12 +775,13 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
         self.pre_text_obs = text_obs
 
         # full_text_obs = self.build_text_obs(text_obs)
+        # breakpoint()
         chat = self._build_chat_obs(text_obs, text_actions, tags, action_or_belief_texts, valids, self.action_or_belief, new_action_or_belief, is_not_processing, tokenizer)
         
-        self.action_or_belief = new_action_or_belief
 
         beliefs = [belief if valid and tag == 'belief' else "" for i, (tag, belief, valid) in enumerate(zip(tags, action_or_belief_texts, valids))]
         actions = [action if valid and (tag == 'search' or tag == "answer") else "" for i, (tag, action, valid) in enumerate(zip(tags, action_or_belief_texts, valids))]
+        self.action_or_belief = new_action_or_belief
         next_observations = {'text': ['']*len(chat), "filtered_belief_generations": beliefs, "filtered_action_generations": actions, 'chat': chat, 'image': None, 'anchor': text_obs}
         rewards = to_numpy(rewards)
         dones = to_numpy(dones)

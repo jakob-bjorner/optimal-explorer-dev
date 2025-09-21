@@ -337,6 +337,7 @@ class TrajectoryCollector:
         traj_uid = np.array([str(uuid.uuid4()) for _ in range(batch_size)], dtype=object)
         total_batch_list = [[] for _ in range(batch_size)]
         total_infos = [[] for _ in range(batch_size)]
+        belief_lengths = [[] for _ in range(batch_size)]
         episode_lengths = np.zeros(batch_size, dtype=np.int32)
         episode_rewards = np.zeros(batch_size, dtype=np.float32)
 
@@ -602,7 +603,10 @@ class TrajectoryCollector:
                 if "filtered_belief_generations" in next_obs:
                     # needed to eventually calculate belief len data per turn easier. 
                     # This will be used in conjunction with the response_ids, which can give the thinking and answer/search tags
-                    batch.non_tensor_batch['filtered_belief_generations'] = next_obs['filtered_belief_generations'] 
+                    batch.non_tensor_batch['filtered_belief_generations'] = next_obs['filtered_belief_generations']
+                    new_belief_lengths = [len(bt) for bt in self.tokenizer(next_obs['filtered_belief_generations']).input_ids]
+                    belief_lengths = [belief_len_list + [new_belief_len] for belief_len_list, new_belief_len in zip(belief_lengths,new_belief_lengths)]
+                    batch.non_tensor_batch['filtered_belief_generations_len'] = np.array(new_belief_lengths)
                     batch.non_tensor_batch['filtered_action_generations'] = next_obs['filtered_action_generations'] 
                 batch.non_tensor_batch['step'] = np.ones(batch_size, dtype=int) * _step
                 batch.non_tensor_batch["info"] = infos
@@ -637,7 +641,19 @@ class TrajectoryCollector:
             # if they don't terminate, we give a -1 reward in the combolock setting.
         if self.config.env.non_terminal_penalty:
             episode_rewards[np.logical_not(is_done) | prompt_too_long] += -self.config.env.non_terminal_penalty
+        # does episode reward not count towards GRPO? No it does, funny enough, the reward thing I think we record per step isn't used tho. seems just for logging.
 
+        if self.config.env.belief_length_penalty: # 0.1
+            # only want to further penalize the runs which did terminate, and terminated with some correct output. to make them correct and smaller.
+            # I think this could lead to reward hacking if the model just records a single objective instead, or just focuses on a single objective.
+            # is the idea make them all smaller? or just make them smaller than a particular size?
+            max_belief_lengths = np.array([max(belief_lens + [0]) for belief_lens in belief_lengths])
+            if max_belief_lengths.max() != max_belief_lengths.min():
+                belief_penalties = (max_belief_lengths - max_belief_lengths.mean())
+                belief_penalties[max_belief_lengths == 0] = 0
+                belief_penalties = belief_penalties / (belief_penalties.max() - belief_penalties.min())
+                episode_rewards[episode_rewards > 0] += -self.config.env.belief_length_penalty * belief_penalties[episode_rewards > 0]
+        # we want to reward the sequences
         success: Dict[str, np.ndarray] = envs.success_evaluator(
                     total_infos=total_infos,
                     total_batch_list=total_batch_list,
@@ -698,8 +714,6 @@ class TrajectoryCollector:
         #   # set to nan 'response_ids_str', 'response_ids_token_len', 'input_ids_str', 'input_ids_token_len', 'anchor_obs' => "", ("is_action_valid", 'rewards', 'active_masks', 'filtered_belief_generations', 'filtered_action_generations', 'step') will all have new values, and need to change things in info
         #   num_beliefs_to_compare = len(flattened_valid_belief_contexts)
         #   new_uid = np.array([str(uuid.uuid4()) for _ in range(num_beliefs_to_compare)], dtype=object)
-        #   
-        #   
         #   new_traj_uid = np.array([str(uuid.uuid4()) for _ in range(batch_size)], dtype=object)
 
 
