@@ -666,7 +666,6 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
         Returns:
         - success (np.ndarray or torch.Tensor): 1 if the episode is successful, 0 otherwise.
         """
-        # breakpoint() 
         # figure out how to calculate the regret so we can see how close to R1 performance we are while training.
         def get_regret_end_val_from_episode_rewards(reward_per_traj_data: np.ndarray, max_attempts):
             regret_arr_per_traj = []
@@ -776,7 +775,6 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
         self.pre_text_obs = text_obs
 
         # full_text_obs = self.build_text_obs(text_obs)
-        # breakpoint()
         chat = self._build_chat_obs(text_obs, text_actions, tags, action_or_belief_texts, valids, self.action_or_belief, new_action_or_belief, is_not_processing, tokenizer)
         
 

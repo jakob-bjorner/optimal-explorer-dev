@@ -248,7 +248,7 @@ class TrajectoryCollector:
         Returns:
             DataProto: Collected and organized trajectory data
         """
-        not_is_belief_grading_context_list = [not info.get('is_belief_grading_context', False) for info in [trajectory_list[0]['info'] for trajectory_list in total_batch_list]]
+        not_is_belief_grading_context_list = [not trajectory_list[0]['info'].get('is_belief_grading_context', False) for trajectory_list in total_batch_list]
         batch_size = len(total_batch_list)
 
         episode_rewards_mean = np.mean(episode_rewards[not_is_belief_grading_context_list])
@@ -732,9 +732,8 @@ class TrajectoryCollector:
                     # belief_context_dict["input_ids"] = belief_context_dict["input_ids"][:2048]
                     # belief_context_dict["attention_mask"] = belief_context_dict["attention_mask"][:2048]
                     # belief_context_dict['position_ids'] = belief_context_dict['position_ids'][:2048]
-                    belief_context_dict["parent_uid"] = belief_context_dict['uid'] # 'uid', 'traj_uid'
-                    belief_context_dict["parent_traj_uid"] = belief_context_dict['traj_uid'] # 'uid', 'traj_uid'
-                    num_beliefs_to_compare = len(flattened_valid_belief_contexts)
+                    belief_context_dict['info']["parent_uid"] = belief_context_dict['uid'] # 'uid', 'traj_uid'
+                    belief_context_dict['info']["parent_traj_uid"] = belief_context_dict['traj_uid'] # 'uid', 'traj_uid'
                     new_uid = str(uuid.uuid4())
                     belief_context_dict["uid"] = new_uid # want to give traj ids after, because we deepcopy these contexts to create other traj_uids.
                     belief_context_dict["traj_uid"] = '' # this should be populated after the group size is increased.
@@ -787,7 +786,6 @@ class TrajectoryCollector:
                     else:
                         return None
                 belief_representation_extracted = list(map(get_posterior_from_response_str, belief_grading_response_strs))
-                breakpoint()
 
                 # need to compare the belief_representations to the true beliefs that they should have after the feedback they have just been given.
                 # I'll only grade the states which are validly parsed. I'll want to record the fraction of states graded. 
@@ -795,7 +793,7 @@ class TrajectoryCollector:
                 # will start with tree search from each starting trajectory, and append to the set that I can grade.
                 # at the end I want to have graded all the.
                 for c, extract in zip(all_belief_contexts, belief_representation_extracted):
-                    c.update({"belief_representation_extracted": extract})
+                    c['info'].update({"belief_representation_extracted": extract, "is_belief_grading_context": True})
                 primary_belief_contexts, secondary_belief_contexts = all_belief_contexts[:len(flattened_valid_belief_contexts)], all_belief_contexts[len(flattened_valid_belief_contexts):]
                 valid_codes = set(permutations(range(10), 3))
                 
@@ -817,16 +815,23 @@ class TrajectoryCollector:
                     primary_belief_context = primary_belief_contexts[i]
                     secondary_belief_context = secondary_belief_contexts[i]
                     true_belief = normalize_from_possibles_list([[int(s) for s in l] for l in primary_belief_context['info']['posterior']])
-                    primary_reward = get_reward_from_possibles_list(primary_belief_context['belief_representation_extracted'], true_belief)
-                    secondary_reward = 0.0 if not secondary_belief_context['is_action_valid'] else get_reward_from_possibles_list(secondary_belief_context['belief_representation_extracted'], true_belief)
+                    primary_reward = get_reward_from_possibles_list(primary_belief_context['info']['belief_representation_extracted'], true_belief)
+                    secondary_reward = 0.0 if not secondary_belief_context['is_action_valid'] else get_reward_from_possibles_list(secondary_belief_context['info']['belief_representation_extracted'], true_belief)
+                    primary_traj_uid = str(uuid.uuid4())
+                    secondary_traj_uid = str(uuid.uuid4())
+
+                    primary_belief_context['traj_uid'] = primary_traj_uid
+                    secondary_belief_context['traj_uid'] = secondary_traj_uid
+                    primary_belief_context['rewards'] = primary_reward
+                    secondary_belief_context['rewards'] = secondary_reward
                     
                     new_total_batch_list.extend([[primary_belief_context], [secondary_belief_context]])
                     new_episode_rewards.extend([primary_reward, secondary_reward])
                     new_episode_lengths.extend([1, 1])
-                    new_traj_uid.extend([str(uuid.uuid4()), str(uuid.uuid4())])
+                    new_traj_uid.extend([primary_traj_uid, secondary_traj_uid])
                     if primary_reward == 0.0:
                         # we skip the rest of the trajectory.
-                        while i < len(primary_belief_contexts) and primary_belief_contexts[i]["parent_traj_uid"] == primary_belief_context["parent_traj_uid"]:
+                        while i < len(primary_belief_contexts) and primary_belief_contexts[i]['info']["parent_traj_uid"] == primary_belief_context['info']["parent_traj_uid"]:
                             i += 1
                         continue
                     else:
@@ -836,7 +841,7 @@ class TrajectoryCollector:
                 episode_rewards = np.array(new_episode_rewards)
                 episode_lengths = np.array(new_episode_lengths)
                 traj_uid = np.array(new_traj_uid)
-                success['fraction_parsable_belief_states_success_rate'] = parsable_belief_states / len(primary_belief_contexts)
+                success['fraction_parsable_belief_states_success_rate'] = np.array([parsable_belief_states] * len(primary_belief_contexts)) / len(primary_belief_contexts)
 
                 # for _ in zip([1]): # permutations
                 #     # check here if the context is valid of invalid, because we just passed it through.
@@ -957,6 +962,7 @@ class TrajectoryCollector:
         
 
         # Create trajectory data
+
         gen_batch_output: DataProto = self.gather_rollout_data(
             total_batch_list=total_batch_list,
             episode_rewards=total_episode_rewards,
