@@ -59,7 +59,7 @@ python3 -m examples.data_preprocess.prepare \
 # going to interactive debug some run with belief state grading. Need to get something training before tonight to see how it does against a baseline.
 # have we even trained something in this environment? What do we have going in this setting?
 # lets do a 3 b model for testing, and have belief states generated. 
-#  B=3 train_data_size=4 GRADE_BELIEF=True DEBUG=combolock_vs_r1 bash examples/grpo_trainer/run_combolock.sh
+#  B=7 train_data_size=16 GRADE_BELIEF=True DEBUG=combolock_vs_r1 bash examples/grpo_trainer/run_combolock.sh
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -114,7 +114,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_agent_alfworld' \
     trainer.experiment_name=grpo_qwen2.5_${B}b_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}_BG_${GRADE_BELIEF}${DEBUG} \
-    trainer.n_gpus_per_node=1 \
+    trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
     trainer.test_freq=10000 \

@@ -535,7 +535,7 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
         chat = self._build_chat_obs(text_obs, None, None, None, None, None, init=True)
         return {'text': ['']*len(chat), 'image': None, 'anchor': text_obs, 'chat': chat}, infos
     def get_belief_from_output_text(self, text_beliefs_raw: List[str]):
-        action_or_belief_texts, valids = self.projection_f(text_beliefs_raw, (self.action_or_belief*0 + 1))
+        action_or_belief_texts, valids = self.projection_f(text_beliefs_raw, np.ones(len(text_beliefs_raw)))
         return action_or_belief_texts, valids
     def step(self, text_actions: List[str], is_not_processing, tokenizer):
         # generate_belief = bool(self.step_idx % 2 != 0) This doesn't determine whether belief is generated or not lol. 
@@ -566,11 +566,12 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
             infos[i]['is_action_valid'] = int(valids[i])
 
 
-        self.action_or_belief = new_action_or_belief
 
         
         beliefs = [belief if valid and self.action_or_belief[i] == 1 else "" for i, (belief, valid) in enumerate(zip(action_or_belief_texts, valids))]
         actions = [action if valid and self.action_or_belief[i] == 0 else "" for i, (action, valid) in enumerate(zip(action_or_belief_texts, valids))]
+
+        self.action_or_belief = new_action_or_belief
         next_observations = {'text': ['']*len(chat), "filtered_belief_generations": beliefs, "filtered_action_generations": actions, 'chat': chat, 'image': None, 'anchor': text_obs}
         rewards = to_numpy(rewards)
         dones = to_numpy(dones)
@@ -665,7 +666,6 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
         Returns:
         - success (np.ndarray or torch.Tensor): 1 if the episode is successful, 0 otherwise.
         """
-        # breakpoint() 
         # figure out how to calculate the regret so we can see how close to R1 performance we are while training.
         def get_regret_end_val_from_episode_rewards(reward_per_traj_data: np.ndarray, max_attempts):
             regret_arr_per_traj = []
@@ -777,10 +777,10 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
         # full_text_obs = self.build_text_obs(text_obs)
         chat = self._build_chat_obs(text_obs, text_actions, tags, action_or_belief_texts, valids, self.action_or_belief, new_action_or_belief, is_not_processing, tokenizer)
         
-        self.action_or_belief = new_action_or_belief
 
         beliefs = [belief if valid and tag == 'belief' else "" for i, (tag, belief, valid) in enumerate(zip(tags, action_or_belief_texts, valids))]
         actions = [action if valid and (tag == 'search' or tag == "answer") else "" for i, (tag, action, valid) in enumerate(zip(tags, action_or_belief_texts, valids))]
+        self.action_or_belief = new_action_or_belief
         next_observations = {'text': ['']*len(chat), "filtered_belief_generations": beliefs, "filtered_action_generations": actions, 'chat': chat, 'image': None, 'anchor': text_obs}
         rewards = to_numpy(rewards)
         dones = to_numpy(dones)

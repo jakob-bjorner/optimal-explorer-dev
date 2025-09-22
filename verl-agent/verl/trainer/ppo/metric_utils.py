@@ -100,8 +100,7 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
             - prompt_length/mean, max, min, clip_ratio: Statistics about prompt lengths
     """
     # should filter out all the belief_contexts. Metrics for belief done elsewhere.
-    # breakpoint() 
-    # batch = batch[[idx for idx, info in batch.non_tensor_batch.info if not info.get('is_belief_grading_context', False)]]
+    batch = batch[[idx for idx, info in enumerate(batch.non_tensor_batch["info"]) if not info.get('is_belief_grading_context', False)]]
     
     sequence_score = batch.batch["token_level_scores"].sum(-1)
     sequence_reward = batch.batch["token_level_rewards"].sum(-1)
@@ -175,6 +174,8 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
             batch.non_tensor_batch["episode_rewards_max"][0].item(),
         "episode/reward/min": 
             batch.non_tensor_batch["episode_rewards_min"][0].item(),
+        "belief_episode/reward/mean": 
+            batch.non_tensor_batch["belief_episode_rewards_mean"][0].item(),
         "episode/length/mean": 
             batch.non_tensor_batch["episode_lengths_mean"][0].item(),
         "episode/length/max":

@@ -7,9 +7,13 @@ SEED=${SEED:-1}
 DEBUG=${DEBUG:-}
 SINGLE_CTX=${SINGLE_CTX:-False}
 MULTI_MSG=${MULTI_MSG:-True}
-MAX_STEPS=${MAX_STEPS:-6}
-MAX_ATTEMPTS=$(($MAX_STEPS*2))
-if [ $SINGLE_CTX ]; then
+MAX_ATTEMPTS=${MAX_ATTEMPTS:-6}
+if (( $NUM_OBJECTIVES >= 8 )); then
+    MAX_ATTEMPTS=20
+fi
+
+MAX_STEPS=$(($MAX_ATTEMPTS * 2))
+if [ $SINGLE_CTX == True ]; then
     MAX_PROMPT_LEN=16384
 else
     MAX_PROMPT_LEN=4096
@@ -24,7 +28,7 @@ IS_MEM1=${IS_MEM1:-False}
 INSTRUCT=${INSTRUCT:-True}
 
 if [ $IS_MEM1 == True ]; then
-    MAX_ATTEMPTS=$MAX_STEPS
+    MAX_STEPS=$MAX_ATTEMPTS
 fi
 if [ $INSTRUCT == True ]; then
     MODEL_DESC=instruct
@@ -33,6 +37,8 @@ else
     MODEL_DESC=""
     MODEL_PATH=qwen/qwen2.5-7b
 fi
+
+LENPEN=${LENPEN:-0}
 
 
 
@@ -92,6 +98,8 @@ python3 -m examples.data_preprocess.prepare \
 # DEBUG=GRPO_INSTRUCT bash examples/grpo_trainer/run_nqhotpotqa.sh
 # DEBUG=GRPO_INSTRUCT IS_MEM1=True bash examples/grpo_trainer/run_nqhotpotqa.sh 
 # the instruct version of this model should be tuned at least sensibly, because there could be minor things which cause it's performance to be worse than we expect. And we want the sensible thing to happen that it performs better than MEM1.
+# peak token lengths experiment but you put a length penalty on the belief lengths.
+# DEBUG=GRPO_INSTRUCT LENPEN=0.1 bash examples/grpo_trainer/run_nqhotpotqa.sh
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -140,8 +148,8 @@ python3 -m verl.trainer.main_ppo \
     env.max_steps=$MAX_STEPS \
     env.non_terminal_penalty=0.0 \
     env.rollout.n=$group_size \
+    env.belief_length_penalty=$LENPEN \
     +env.split=train \
-    +env.max_attempts=$MAX_ATTEMPTS \
     +env.num_objectives=2 \
     +env.max_obs_length=1000 \
     +env.topk=3 \
@@ -150,7 +158,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_agent_alfworld' \
-    trainer.experiment_name=nqhotpotqa_grpo_qwen2.5-7b-${MODEL_DESC}_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}_is_mem1_${IS_MEM1}${DEBUG} \
+    trainer.experiment_name=nqhotpotqa_grpo_qwen2.5-7b-${MODEL_DESC}_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}_is_mem1_${IS_MEM1}_belief_len_pen_${LENPEN}${DEBUG} \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
