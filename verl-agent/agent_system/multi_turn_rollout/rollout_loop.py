@@ -797,7 +797,7 @@ class TrajectoryCollector:
                 async def generate_all(prompts):
                     return await asyncio.gather(*[generate(p, 40) for p in prompts])
                 belief_grading_response_strs = asyncio.run(generate_all(grading_prompts))
-                breakpoint()
+                # breakpoint()
                 # then we parse the strs, and get the ground truth 
 
                 pattern = r"in position 1: (.*)\n.*in position 2: (.*)\n.*in position 3: (.*)" # this is specific to the prompt we use, but whatever. storing it here for now.
