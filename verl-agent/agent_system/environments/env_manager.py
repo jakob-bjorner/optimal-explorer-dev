@@ -725,7 +725,7 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
         self.successful_searches = 0
         is_not_processing = np.zeros(len(text_obs), dtype=np.bool)
 
-        chat = self._build_chat_obs(text_obs, None, None, None, None, None, None, is_not_processing, None, init=True)
+        chat = self._build_chat_obs(text_obs, None, None, None, None, None, None, None, is_not_processing, None, init=True)
         return {'text': ['']*len(chat), 'image': None, 'anchor': text_obs, 'chat': chat}, infos
 
 
@@ -775,7 +775,7 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
         self.pre_text_obs = text_obs
 
         # full_text_obs = self.build_text_obs(text_obs)
-        chat = self._build_chat_obs(text_obs, text_actions, tags, action_or_belief_texts, valids, self.action_or_belief, new_action_or_belief, is_not_processing, tokenizer)
+        chat = self._build_chat_obs(text_obs, text_actions, tags, infos, action_or_belief_texts, valids, self.action_or_belief, new_action_or_belief, is_not_processing, tokenizer)
         
 
         beliefs = [belief if valid and tag == 'belief' else "" for i, (tag, belief, valid) in enumerate(zip(tags, action_or_belief_texts, valids))]
@@ -822,7 +822,7 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
             format_reference += f"Doc {idx+1}(Title: {title}) {text}\n"
 
         return format_reference
-    def _build_chat_obs(self, text_obs, full_text_actions, tags, actions_or_beliefs, valids, old_action_or_belief, new_action_or_belief, is_not_processing, tokenizer, init: bool = False)-> List[Dict[str,str]]:
+    def _build_chat_obs(self, text_obs, full_text_actions, tags, infos, actions_or_beliefs, valids, old_action_or_belief, new_action_or_belief, is_not_processing, tokenizer, init: bool = False)-> List[Dict[str,str]]:
         postprocess_text_obs = []
         # valids wil be none, and actions will also be none, so I just give the chat history which is default for every first interaction.
         for i in range(len(text_obs)):
@@ -831,11 +831,18 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
                 continue
             if init:
                 if self.config.env.is_mem1:
-                    postprocess_text_obs.append([{'role': "user", 'content': get_NQHOTPOTQA_AGENT_FIRST_MESSAGE_MEM1(self.questions[i], self.config.actor_rollout_ref.rollout.instruct)}])
+                    if self.config.env.force_full_step_len:
+                        postprocess_text_obs.append([{'role': "user", 'content': get_NQHOTPOTQA_FULL_AGENT_FIRST_MESSAGE_MEM1(self.questions[i], self.config.actor_rollout_ref.rollout.instruct)}])
+                    else:
+                        postprocess_text_obs.append([{'role': "user", 'content': get_NQHOTPOTQA_AGENT_FIRST_MESSAGE_MEM1(self.questions[i], self.config.actor_rollout_ref.rollout.instruct)}])
                     # need to add the generation template manually, because it was done wrong in MEM1.
                 else:
-                    postprocess_text_obs.append([{'role': "system", 'content': NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]})},
-                                                {'role': "user", 'content': NQHOTPOTQA_FIRST_USER_MESSAGE}])
+                    if self.config.env.force_full_step_len:
+                        postprocess_text_obs.append([{'role': "system", 'content': NQHOTPOTQA_FULL_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]})},
+                                                    {'role': "user", 'content': NQHOTPOTQA_FULL_FIRST_USER_MESSAGE}])
+                    else:
+                        postprocess_text_obs.append([{'role': "system", 'content': NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]})},
+                                                    {'role': "user", 'content': NQHOTPOTQA_FIRST_USER_MESSAGE}])
             else:
                 # list of 0 or 1 indicating action or belief being generated.
                 # this is updated right before this function call, 
@@ -871,8 +878,11 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
                         else:
                             agent_action = "invalid action"
                             env_response = NQHOTPOTQA_ENV_RESPONSE
-
-                        new_belief_messages = [{'role': "user", 'content': NQHOTPOTQA_BELIEF_PROMPT.format(agent_first_message=NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]}),
+                        if self.config.env.force_full_step_len:
+                            agent_first_message = NQHOTPOTQA_FULL_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]})
+                        else:
+                            agent_first_message = NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]})
+                        new_belief_messages = [{'role': "user", 'content': NQHOTPOTQA_BELIEF_PROMPT.format(agent_first_message=agent_first_message,
                                                                                                     belief_state=prior_belief,
                                                                                                     agent_action=agent_action,
                                                                                                     env_response=env_response)}]
@@ -890,7 +900,7 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
                         # this extraction strategy is taken from mem1
                         belief = "<think>" + full_text_actions[i].split('<think>')[1] if '<think>' in full_text_actions[i] else full_text_actions[i]
                         
-                        new_action_messages = [{'role': "user", 'content': get_NQHOTPOTQA_AGENT_FIRST_MESSAGE_MEM1(self.questions[i], self.config.actor_rollout_ref.rollout.instruct)},
+                        new_action_messages = [{'role': "user", 'content': (get_NQHOTPOTQA_FULL_AGENT_FIRST_MESSAGE_MEM1 if self.config.env.force_full_step_len else get_NQHOTPOTQA_AGENT_FIRST_MESSAGE_MEM1)(self.questions[i], self.config.actor_rollout_ref.rollout.instruct)},
                                                {'role': 'assistant', "content": belief},
                                                {'role': 'user', 'content': text_obs[i]}]
                         postprocess_text_obs.append(new_action_messages)
@@ -905,8 +915,12 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
                             belief = actions_or_beliefs[i]
                             self.prior_beliefs[i] = belief
                             self.prior_belief_messages[i] = None
-                            new_action_messages = [{'role':'user', 'content': NQHOTPOTQA_ACTION_PROMPT.format(agent_first_message=NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]}),
-                                                                                                            belief_state=belief)}]
+                            if self.config.env.force_full_step_len:
+                                agent_first_message = NQHOTPOTQA_FULL_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]})
+                            else:
+                                agent_first_message = NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]})
+                            hint = "It is your last step." if infos[i]['is_last_step'] else f"You have {infos[i]['steps_remaining']} steps remaining."
+                            new_action_messages = [{'role':'user', 'content': (NQHOTPOTQA_FULL_ACTION_PROMPT if self.config.env.force_full_step_len else NQHOTPOTQA_ACTION_PROMPT).format(agent_first_message=agent_first_message, belief_state=belief, hint=hint)}]
                             if self.config.actor_rollout_ref.rollout.single_context:
                                 new_action_messages = [{'role': "user", 'content': NQHOTPOTQA_ACTION_PROMPT_SINGLE_CONTEXT}]
                             postprocess_text_obs.append(new_action_messages)
@@ -1029,8 +1043,8 @@ def make_envs(config):
         return envs, val_envs
     elif "nqhotpotqa" in config.env.env_name.lower():
         from agent_system.environments.env_package.nqhotpotqa import build_nqhotpotqa_envs, nqhotpotqa_projection
-        _envs = build_nqhotpotqa_envs(split=config.env.split, num_objectives=config.env.num_objectives, seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, )
-        _val_envs = build_nqhotpotqa_envs(split=config.env.split,  num_objectives=config.env.num_objectives, seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False)
+        _envs = build_nqhotpotqa_envs(split=config.env.split, num_objectives=config.env.num_objectives, force_full=config.env.force_full_step_len, seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, )
+        _val_envs = build_nqhotpotqa_envs(split=config.env.split,  num_objectives=config.env.num_objectives, force_full=config.env.force_full_step_len, seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False)
 
         projection_f = partial(nqhotpotqa_projection)
         envs = NQHotpotQAEnvironmentManager(_envs, projection_f, config)

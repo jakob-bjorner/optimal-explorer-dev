@@ -60,11 +60,12 @@ class NQHotpotQAWorker:
     Ray remote actor that replaces the worker function.
     Each actor holds an independent instance of the specified gym environment.
     """
-    def __init__(self, seed, split, num_objectives):
+    def __init__(self, seed, split, force_full, num_objectives):
         """Initialize the gym environment in this worker"""
         self.ds = datasets.load_dataset("../MEM1/Mem1/train/data/nq_hotpotqa_train_multi_"+str(num_objectives), split=split)
         # self.env = NQHotpotQA(combination_length, max_attempts, vocab)
         # self.ds.shuffle(seed)
+        self.force_full = force_full
         if num_objectives <= 4:
             self.max_attempts = 6
         else:
@@ -78,12 +79,12 @@ class NQHotpotQAWorker:
     def step(self, action):
         """Execute a step in the environment"""
         tag, action, skip_sampling_step = action
-        info = {"attempt": self.attempt+1, "target": self.data['reward_model']['ground_truth']['target']}
+        info = {"attempt": self.attempt+1, "is_last_step": self.attempt+1==self.max_attempts, "steps_remaining": self.max_attempts - self.attempt - 1, "target": self.data['reward_model']['ground_truth']['target']}
         if skip_sampling_step:
             # the belief generation step is checked only on the top level env manager. 
             # This is just a noop so other environments can step if they need to.
             return "", 0, False, info |{"won": self.has_won}
-        if self.attempt+1 >= self.max_attempts:
+        if self.attempt >= self.max_attempts:
             return "", 0, True, info | {"won": self.has_won}
         # obs, _, done, info = self.env.step(action)
         # str_response_in_tool_call = ""
@@ -106,11 +107,13 @@ class NQHotpotQAWorker:
         obs_res = ""
         done = False
         if tag == "answer":
-
-            reward = compute_score_em(action, self.data['reward_model']['ground_truth']['target'])
-            if reward > 0:
-                info = info | {"won": True}
-                self.has_won = True
+            if self.force_full and self.attempt+1 == self.max_attempts:
+                reward = 0
+            else:
+                reward = compute_score_em(action, self.data['reward_model']['ground_truth']['target'])
+                if reward > 0:
+                    info = info | {"won": True}
+                    self.has_won = True
             done = True
         else:
             reward = 0
@@ -158,6 +161,7 @@ class NQHotpotQAEnvs:
     def __init__(self,
                  split,
                  num_objectives,
+                 force_full,
                  seed=0,
                  env_num=1,
                  group_n=1,
@@ -181,6 +185,7 @@ class NQHotpotQAEnvs:
             worker = NQHotpotQAWorker.remote(
                 seed,
                 split,
+                force_full,
                 num_objectives
             )
             self.workers.append(worker)
@@ -258,6 +263,7 @@ class NQHotpotQAEnvs:
 
 def build_nqhotpotqa_envs(split,
                         num_objectives,
+                        force_full,
                         seed,
                         env_num,
                         group_n,
@@ -274,6 +280,7 @@ def build_nqhotpotqa_envs(split,
     return NQHotpotQAEnvs(
         split,
         num_objectives,
+        force_full,
         seed=seed,
         env_num=env_num,
         group_n=group_n,

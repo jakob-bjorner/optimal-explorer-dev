@@ -39,6 +39,7 @@ else
 fi
 
 LENPEN=${LENPEN:-0}
+FORCE_FULL=${FORCE_FULL:-False}
 
 
 
@@ -100,6 +101,8 @@ python3 -m examples.data_preprocess.prepare \
 # the instruct version of this model should be tuned at least sensibly, because there could be minor things which cause it's performance to be worse than we expect. And we want the sensible thing to happen that it performs better than MEM1.
 # peak token lengths experiment but you put a length penalty on the belief lengths.
 # DEBUG=GRPO_INSTRUCT LENPEN=0.1 bash examples/grpo_trainer/run_nqhotpotqa.sh
+# add a parameter to only penalize the beliefs if it is above a particular length.
+# add parameter for forcing full step length in nqhotpotqa. Test this in modal.
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -149,6 +152,7 @@ python3 -m verl.trainer.main_ppo \
     env.non_terminal_penalty=0.0 \
     env.rollout.n=$group_size \
     env.belief_length_penalty=$LENPEN \
+    +env.force_full_step_len=$FORCE_FULL \
     +env.split=train \
     +env.num_objectives=2 \
     +env.max_obs_length=1000 \
