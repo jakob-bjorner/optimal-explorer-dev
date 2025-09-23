@@ -31,6 +31,8 @@ from copy import deepcopy, copy
 import re
 import ast
 from itertools import product, permutations
+import os
+import asyncio
 
 class TrajectoryCollector:
     def __init__(self, config, tokenizer: PreTrainedTokenizer, processor=None):
@@ -758,21 +760,47 @@ class TrajectoryCollector:
 
                 all_belief_contexts = flattened_valid_belief_contexts + new_belief_contexts
                 from agent_system.environments.prompts.combolock import COMBO_BELIEF_GRADING_PROMPT, COMBO_BELIEF_GRADING_PROMPT_FILLER_BELIEF
-                grading_prompts = [COMBO_BELIEF_GRADING_PROMPT.format(belief=c['filtered_belief_generations']) if c['is_action_valid'] else COMBO_BELIEF_GRADING_PROMPT.format(belief=COMBO_BELIEF_GRADING_PROMPT_FILLER_BELIEF) for c in all_belief_contexts] 
+                grading_prompts = [COMBO_BELIEF_GRADING_PROMPT.format(belief=c['filtered_belief_generations']) if c['is_action_valid'] else "" for c in all_belief_contexts] 
                 # I decide not to filter out the invalids here, and just grade everything because its less book keeping. shouldn't be too bad when the code is working well. < 1/6 beliefs seem to fail.
                 # we don't need to grade the invalid cases, just reward them -1.
-                old_padding_side = self.tokenizer.padding_side
-                self.tokenizer.padding_side = "left"
-                grading_inputs = self.tokenizer(grading_prompts, return_tensors='pt', padding="max_length", max_length=self.config.data.max_prompt_length)
-                self.tokenizer.padding_side = old_padding_side
+                # old_padding_side = self.tokenizer.padding_side
+                # self.tokenizer.padding_side = "left"
+                # grading_inputs = self.tokenizer(grading_prompts, return_tensors='pt', padding="max_length", max_length=self.config.data.max_prompt_length)
+                # self.tokenizer.padding_side = old_padding_side
 
-                input_for_belief_grading = DataProto.from_single_dict(data={'input_ids': grading_inputs['input_ids'], "attention_mask": grading_inputs['attention_mask'], "position_ids": compute_position_id_with_mask(grading_inputs['attention_mask'])})
-                input_for_belief_grading.meta_info['extra_sample_params'] = {'stop': ['```'], "include_stop_str_in_output": True, "detokenize": True}
-                belief_grading_outputs = actor_rollout_wg.generate_sequences(input_for_belief_grading)
-                belief_grading_response_strs = self.tokenizer.batch_decode(belief_grading_outputs.batch['responses'], skip_special_tokens=True)
+                # input_for_belief_grading = DataProto.from_single_dict(data={'input_ids': grading_inputs['input_ids'], "attention_mask": grading_inputs['attention_mask'], "position_ids": compute_position_id_with_mask(grading_inputs['attention_mask'])})
+                # input_for_belief_grading.meta_info['extra_sample_params'] = {'stop': ['```'], "include_stop_str_in_output": True, "detokenize": True}
+                # belief_grading_outputs = actor_rollout_wg.generate_sequences(input_for_belief_grading)
+                # belief_grading_response_strs = self.tokenizer.batch_decode(belief_grading_outputs.batch['responses'], skip_special_tokens=True)
+
+                from openai import AsyncOpenAI
+
+                client = AsyncOpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=os.environ['OPENROUTER_API_KEY'],
+                )
+                async def generate(prompt, timeout): # want something that waits for a total timeout and if it doesn't work just return an empty string.
+                    if prompt:
+                        for _ in range(3):
+                            try:
+                                return (await asyncio.wait_for(client.chat.completions.create(
+                                    extra_body={},
+                                    model="x-ai/grok-4-fast:free",
+                                    messages=[{"role": "user", "content":prompt}]
+                                    ), timeout=timeout)).choices[0].message.content
+                            except Exception as e:
+                                if isinstance(e, asyncio.TimeoutError):
+                                    return ""
+                                else:
+                                    await asyncio.sleep(10)
+                    return ""
+                async def generate_all(prompts):
+                    return await asyncio.gather(*[generate(p, 40) for p in prompts])
+                belief_grading_response_strs = asyncio.run(generate_all(grading_prompts))
+                breakpoint()
                 # then we parse the strs, and get the ground truth 
 
-                pattern = r"in position 1: (.*)\n.*in position 2: (.*)\n.*in position 3: (.*)\n" # this is specific to the prompt we use, but whatever. storing it here for now.
+                pattern = r"in position 1: (.*)\n.*in position 2: (.*)\n.*in position 3: (.*)" # this is specific to the prompt we use, but whatever. storing it here for now.
                 program = re.compile(pattern)
                 def get_posterior_from_response_str(response_str):
                     match = program.search(response_str)

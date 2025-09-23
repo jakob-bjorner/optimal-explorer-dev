@@ -33,6 +33,62 @@ def play_combination_lock_interactive():
             print(f"\nGame over! The combination was: {mdp.target_combination}", flush=True)
             break
 
+class Criteria:
+    def __init__(self):
+        # types of feedback. 
+        # W is in the word and in the correct spot.
+        # I is in the word but in the wrong spot.
+        # U is not in the word in any spot.
+        self.contained: set[tuple[int,...]] = set()
+        self.located: dict = dict()
+        self.not_contained: set = set()
+
+    def is_supported(self, word):
+        for p, c in self.located.items():
+            if word[p] != c:
+                return False
+        for p, c in self.contained:
+            if c not in word:
+                return False
+            if word[p] == c:
+                return False
+        for c in self.not_contained:
+            if c in word:
+                return False
+        return True
+    def __repr__(self):
+        return f"Criteria(contained={self.contained}, located={self.located}, not_contained={self.not_contained})"
+    def __add__(self, other):
+        new_contained = self.contained | other.contained
+        new_located = self.located | other.located
+        new_not_contained = self.not_contained | other.not_contained
+        new_criteria = Criteria()
+        new_criteria.contained = new_contained
+        new_criteria.located = new_located
+        new_criteria.not_contained = new_not_contained
+        return new_criteria
+
+def get_criteria(guess, target):
+    criteria: Criteria = Criteria()
+    for i, (c_t, c_g) in enumerate(zip(target, guess)):
+        if c_t == c_g:
+            criteria.located[i] = c_t
+        elif c_g in target:
+            criteria.contained.add((i, c_g))
+        else:
+            criteria.not_contained.add(c_g)
+    return criteria
+
+def find_new_support(support: list[str], criteria: Criteria):
+    new_support = []
+    for word in support:
+        if criteria.is_supported(word):
+            new_support.append(word)
+    return new_support
+def get_posterior_from_support(support: list[tuple[str,...]]):
+    pos_is = zip(*support)
+    return [list(set(pos_i)) for pos_i in pos_is]
+
 class CombinationLock:
     def __init__(
             self, 
@@ -98,6 +154,7 @@ class CombinationLock:
         self.current_attempt = 0
         self.guess_history = []
         self.posterior = [list(self.vocab) for _ in range(self.combination_length)]  # Initialize with all characters from vocab
+        self.criteria = Criteria()
         self.target_combination = random.choice(self.possible_combinations)
         return self._get_observation()
     
@@ -199,9 +256,10 @@ class CombinationLock:
         else:
             reward = 0.0
             done = False
+        self.criteria += get_criteria(action, self.target_combination)
         return self._get_observation(), reward, done, {
             'feedback': feedback,
-            'posterior': self.generate_posterior_str(),
+            'posterior': get_posterior_from_support(find_new_support(itertools.permutations(self.vocab, self.combination_length), self.criteria)),
         }
     def _is_valid_guess(self, guess: str) -> bool:
         """Check if a guess is valid."""

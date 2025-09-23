@@ -17,7 +17,7 @@ train_data_size=${train_data_size:-16}
 val_data_size=8
 group_size=2
 B=${B:-7}
-GRADE_BELIEF=${GRADE_BELIEF:-False}
+GRADE_BELIEF=${GRADE_BELIEF:-0.0}
 # invalid_action_penalty_coef=0.0
 # also their kl is 0.01 lol.
 # Need to change the max_prompt_len hyper param for real run. ahh its probably ok actually.
@@ -59,7 +59,8 @@ python3 -m examples.data_preprocess.prepare \
 # going to interactive debug some run with belief state grading. Need to get something training before tonight to see how it does against a baseline.
 # have we even trained something in this environment? What do we have going in this setting?
 # lets do a 3 b model for testing, and have belief states generated. 
-#  B=7 train_data_size=16 GRADE_BELIEF=True DEBUG=combolock_vs_r1 bash examples/grpo_trainer/run_combolock.sh
+# B=3 train_data_size=4 GRADE_BELIEF=1.0 DEBUG=combolock_vs_r1_test bash examples/grpo_trainer/run_combolock.sh
+#  B=7 train_data_size=16 GRADE_BELIEF=1.0 DEBUG=combolock_vs_r1 bash examples/grpo_trainer/run_combolock.sh
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \

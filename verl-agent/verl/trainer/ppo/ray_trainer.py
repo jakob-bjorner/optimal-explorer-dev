@@ -1226,6 +1226,10 @@ class RayPPOTrainer:
                     # creating outputs for reading the trajectories.
 
                     # update critic
+                    if self.config.trainer.belief_state_grading:
+                        belief_state_grading_mask = [info.get('is_belief_grading_context', False) for idx, info in enumerate(batch.non_tensor_batch["info"])]
+                        batch.batch['returns'][belief_state_grading_mask] *= self.config.trainer.belief_state_grading
+                        batch.batch['advantages'][belief_state_grading_mask] *= self.config.trainer.belief_state_grading
                     if self.use_critic:
                         with _timer("update_critic", timing_raw):
                             critic_output = self.critic_wg.update_critic(batch)

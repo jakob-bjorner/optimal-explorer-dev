@@ -262,7 +262,7 @@ algorithm:
     max_num_gen_batches: 10
 
 trainer:
-  belief_state_grading: False
+  belief_state_grading: 0.0
   only_gen_once: False
   balance_batch: True
   total_epochs: 30
