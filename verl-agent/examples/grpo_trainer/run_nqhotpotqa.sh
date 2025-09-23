@@ -12,7 +12,7 @@ if (( $NUM_OBJECTIVES >= 8 )); then
     MAX_ATTEMPTS=20
 fi
 
-MAX_STEPS=$(($MAX_ATTEMPTS * 2))
+MAX_STEPS=$(($MAX_ATTEMPTS * 2 - 1))
 if [ $SINGLE_CTX == True ]; then
     MAX_PROMPT_LEN=16384
 else
@@ -100,7 +100,7 @@ python3 -m examples.data_preprocess.prepare \
 # DEBUG=GRPO_INSTRUCT IS_MEM1=True bash examples/grpo_trainer/run_nqhotpotqa.sh 
 # the instruct version of this model should be tuned at least sensibly, because there could be minor things which cause it's performance to be worse than we expect. And we want the sensible thing to happen that it performs better than MEM1.
 # peak token lengths experiment but you put a length penalty on the belief lengths.
-# DEBUG=GRPO_INSTRUCT LENPEN=0.1 bash examples/grpo_trainer/run_nqhotpotqa.sh
+# DEBUG=GRPO_INSTRUCT LENPEN=0.0 bash examples/grpo_trainer/run_nqhotpotqa.sh
 # add a parameter to only penalize the beliefs if it is above a particular length.
 # add parameter for forcing full step length in nqhotpotqa. Test this in modal.
 

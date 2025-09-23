@@ -14,8 +14,7 @@ if (( $NUM_OBJECTIVES >= 8 )); then
     MAX_ATTEMPTS=20
 fi
 
-MAX_STEPS=$(($MAX_ATTEMPTS * 2))
-
+MAX_STEPS=$(($MAX_ATTEMPTS * 2 - 1))
 if [ $SINGLE_CTX == True ]; then
     echo "True single context"
     if [ $MULTI_MSG == False ]; then
@@ -107,6 +106,23 @@ python3 -m examples.data_preprocess.prepare \
 
 # /home/jbjorner3/storage/dev/optimal-explorer-dev/verl-agent/checkpoints/verl_agent_alfworld/nqhotpotqa_grpo_qwen2.5-7b-_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260
 # CKPT="qwen2.5-7b-_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" IS_MEM1=True INSTRUCT=False train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=1 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; CKPT="qwen2.5-7b-_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" IS_MEM1=True INSTRUCT=False train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=2 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; CKPT="qwen2.5-7b-_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" IS_MEM1=True INSTRUCT=False train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; CKPT="qwen2.5-7b-_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" IS_MEM1=True INSTRUCT=False train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; CKPT="qwen2.5-7b-_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" IS_MEM1=True INSTRUCT=False train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=16 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh;CKPT="qwen2.5-7b-_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" IS_MEM1=True INSTRUCT=False train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=1 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; CKPT="qwen2.5-7b-_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" IS_MEM1=True INSTRUCT=False train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=2 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; CKPT="qwen2.5-7b-_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" IS_MEM1=True INSTRUCT=False train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; CKPT="qwen2.5-7b-_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" IS_MEM1=True INSTRUCT=False train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; CKPT="qwen2.5-7b-_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_TrueMEM1GRPO32/global_step_260" IS_MEM1=True INSTRUCT=False train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=16 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+
+
+#CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=1 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=2 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=16 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=1 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=2 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=16 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
+
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/verl-agent/text/train.parquet \
