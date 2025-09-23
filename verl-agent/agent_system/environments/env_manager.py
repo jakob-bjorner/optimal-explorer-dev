@@ -740,6 +740,7 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
         skip_sampling_mdp = self.action_or_belief | ~np.array(valids, dtype=bool) | is_not_processing
         actions = list(zip(tags, action_or_belief_texts, skip_sampling_mdp))
         text_obs, rewards, dones, infos = self.envs.step(actions) 
+        dones = np.logical_or(dones, np.logical_not(valids))
         # perform the search in a grouped fashion, ensure the step isn't done, the question is processing, and that the action is search.
         search_queries = [content for i, (action, content) in enumerate(zip(tags, action_or_belief_texts)) if action == 'search' and not skip_sampling_mdp[i]]
         search_results = self.batch_search(search_queries)

@@ -105,7 +105,7 @@ NQHOTPOTQA_BELIEF_PROMPT="""Global Instruction: <instruction>{agent_first_messag
 Your current belief state: <belief>{belief_state}</belief>
 Your last action: <search>{agent_action}</search>
 Environment feedback: <environment>{env_response}</environment>
-Now update your belief state to include all important new information you have gathered.
+Now update your belief state to be a concise summary of all essential information you have gathered.
 Do not say anything about future actions. Think step by step and then output your new belief state inside <belief> ... </belief>, e.g., <think>Any thinking</think><belief>your new belief</belief>."""
 
 
@@ -113,7 +113,7 @@ Do not say anything about future actions. Think step by step and then output you
 # Do not say anything about future actions. Think step by step and then output your new belief state inside <belief> ... </belief>, e.g., <think>Any thinking</think><belief>your new beliefs</belief>."""
 # COMBO_ACTION_PROMPT_SINGLE_CONTEXT = """Now think step by step and then output your next action formatted as a list of 3 characters inside <action> ... </action>, e.g.,<think>Any step by step, short and concise thinking to determine your next action</think><action>['char 1', 'char 2', 'char 3']</action>."""
 
-NQHOTPOTQA_BELIEF_PROMPT_SINGLE_CONTEXT="""Now update your belief state to include all important new information you have gathered.
+NQHOTPOTQA_BELIEF_PROMPT_SINGLE_CONTEXT="""Now update your belief state to be a concise summary of all essential information you have gathered.
 Do not say anything about future actions. Think step by step and then output your new belief state inside <belief> ... </belief>, e.g., <think>Any thinking</think><belief>your new belief</belief>."""
 NQHOTPOTQA_ACTION_PROMPT_SINGLE_CONTEXT="""Now think step by step and then output your next action formatted as <think> ... </think><search> ... </search> or <think> ... </think><answer> ... </answer>."""
 
