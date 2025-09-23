@@ -137,7 +137,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
-    actor_rollout_ref.rollout.val_kwargs.temperature=0.4 \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.01 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.rollout.max_num_batched_tokens=$max_num_batched_tokens \
     actor_rollout_ref.rollout.single_context=$SINGLE_CTX \
