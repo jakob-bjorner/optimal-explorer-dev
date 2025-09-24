@@ -242,7 +242,7 @@ class CombinationLock:
             return self._get_observation(), -1.0, True, {'error': 'Invalid guess'}
         
         feedback = self._get_feedback(action)
-        self.posterior = self._update_posterior(action, feedback)
+        self.posterior = get_posterior_from_support(find_new_support(itertools.permutations(self.vocab, self.combination_length), self.criteria))
         self.current_attempt += 1
         self.guess_history.append(action)
         
@@ -259,7 +259,7 @@ class CombinationLock:
         self.criteria += get_criteria(action, self.target_combination)
         return self._get_observation(), reward, done, {
             'feedback': feedback,
-            'posterior': get_posterior_from_support(find_new_support(itertools.permutations(self.vocab, self.combination_length), self.criteria)),
+            'posterior': self.posterior,
         }
     def _is_valid_guess(self, guess: str) -> bool:
         """Check if a guess is valid."""
