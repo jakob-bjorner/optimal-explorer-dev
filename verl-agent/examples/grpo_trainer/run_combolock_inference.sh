@@ -24,6 +24,8 @@ fi
 export VLLM_ATTENTION_BACKEND=XFORMERS
 
 train_data_size=${train_data_size:-256}
+GRADE_BELIEF=${GRADE_BELIEF:-0.0}
+
 # 16 for training
 # minbatch should be 8 on 4 gpus. and 16 on 8 gpus to match the micro per gpu assert.
 val_data_size=8
@@ -62,6 +64,10 @@ python3 -m examples.data_preprocess.prepare \
 # CKPT="_seed1_sc_True_belief_prompting_False/global_step_140" SINGLE_CTX=True MULTI_MSG=False MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh
 
 # CKPT="_seed1_sc_True_belief_prompting_True/global_step_20" SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CKPT="_seed1_sc_True_belief_prompting_True/global_step_40" SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CKPT="_seed1_sc_True_belief_prompting_True/global_step_60" SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CKPT="_seed1_sc_True_belief_prompting_True/global_step_80" SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CKPT="_seed1_sc_True_belief_prompting_True/global_step_100" SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CKPT="_seed1_sc_True_belief_prompting_True/global_step_120" SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CKPT="_seed1_sc_True_belief_prompting_True/global_step_140" SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh
+
+
+# grpo_qwen2.5_7b_16sfr_seed1_sc_False_belief_prompting_True_BG_2.0combolock_vs_r1_new_parse4
+# CKPT="_seed1_sc_False_belief_prompting_True_BG_2.0combolock_vs_r1_new_parse4/global_step_20" GRADE_BELIEF=2.0 SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CKPT="_seed1_sc_False_belief_prompting_True_BG_2.0combolock_vs_r1_new_parse4/global_step_40" GRADE_BELIEF=2.0 SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CKPT="_seed1_sc_False_belief_prompting_True_BG_2.0combolock_vs_r1_new_parse4/global_step_60" GRADE_BELIEF=2.0 SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CKPT="_seed1_sc_False_belief_prompting_True_BG_2.0combolock_vs_r1_new_parse4/global_step_80" GRADE_BELIEF=2.0 SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CKPT="_seed1_sc_False_belief_prompting_True_BG_2.0combolock_vs_r1_new_parse4/global_step_100" GRADE_BELIEF=2.0 SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CKPT="_seed1_sc_False_belief_prompting_True_BG_2.0combolock_vs_r1_new_parse4/global_step_120" GRADE_BELIEF=2.0 SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CKPT="_seed1_sc_False_belief_prompting_True_BG_2.0combolock_vs_r1_new_parse4/global_step_140" GRADE_BELIEF=2.0 SINGLE_CTX=True MULTI_MSG=True MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh
 
 
 python3 -m verl.trainer.main_ppo \
@@ -112,6 +118,7 @@ python3 -m verl.trainer.main_ppo \
     +env.vocab=$VOCAB \
     +env.max_attempts=$MAX_ATTEMPTS \
     env.rollout.n=$group_size \
+    trainer.belief_state_grading=$GRADE_BELIEF \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_agent_alfworld' \
@@ -121,6 +128,6 @@ python3 -m verl.trainer.main_ppo \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
-    trainer.test_freq=5 \
+    trainer.test_freq=10000 \
     trainer.total_epochs=400 \
     trainer.val_before_train=False $@
