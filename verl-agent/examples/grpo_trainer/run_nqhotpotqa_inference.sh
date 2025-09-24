@@ -44,6 +44,8 @@ else
     MODEL_PATH=qwen/qwen2.5-7b
 fi
 
+FORCE_FULL=${FORCE_FULL:-False}
+
 # invalid_action_penalty_coef=0.0
 # also their kl is 0.01 lol.
 # Need to change the max_prompt_len hyper param for real run. ahh its probably ok actually.
@@ -123,6 +125,8 @@ python3 -m examples.data_preprocess.prepare \
 # CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
 # CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT/global_step_140" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
 
+
+# CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.1GRPO_INSTRUCT_3/global_step_260" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=1.0 NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/verl-agent/text/train.parquet \
@@ -171,6 +175,7 @@ python3 -m verl.trainer.main_ppo \
     env.max_steps=$MAX_STEPS \
     env.non_terminal_penalty=0.0 \
     env.rollout.n=$group_size \
+    +env.force_full_step_len=$FORCE_FULL \
     +env.split=test \
     +env.num_objectives=$NUM_OBJECTIVES \
     +env.max_obs_length=1000 \
