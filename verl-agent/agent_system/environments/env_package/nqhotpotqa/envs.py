@@ -60,9 +60,11 @@ class NQHotpotQAWorker:
     Ray remote actor that replaces the worker function.
     Each actor holds an independent instance of the specified gym environment.
     """
-    def __init__(self, seed, split, force_full, num_objectives):
+    def __init__(self, seed, num_envs, split, force_full, num_objectives):
         """Initialize the gym environment in this worker"""
-        self.ds = datasets.load_dataset("../MEM1/Mem1/train/data/nq_hotpotqa_train_multi_"+str(num_objectives), split=split)
+        self.split = split
+        self.num_envs = num_envs
+        self.ds = datasets.load_dataset("../MEM1/Mem1/train/data/nq_hotpotqa_train_multi_"+str(num_objectives), split=self.split)
         # self.env = NQHotpotQA(combination_length, max_attempts, vocab)
         # self.ds.shuffle(seed)
         self.force_full = force_full
@@ -71,9 +73,12 @@ class NQHotpotQAWorker:
         else:
             self.max_attempts = 20
         self.attempt = 0
-        self.index_ordering = np.random.default_rng(seed).permutation(len(self.ds))
+        if self.split == 'test':
+            self.index_ordering = (seed + num_envs * np.arange(len(self.ds))) % len(self.ds)
+        else:
+            self.index_ordering = np.random.default_rng(seed).permutation(len(self.ds))
         # self.env.reset(seed)
-        self.index = 0
+        self.index = -1
         self.has_won = False
     
     def step(self, action):
@@ -132,8 +137,7 @@ class NQHotpotQAWorker:
     
     def reset(self, seed_for_reset=None):
         """Reset the environment with optional seed"""
-        
-        if seed_for_reset is not None:
+        if not self.split == 'test' and seed_for_reset is not None:
             self.index = int(np.random.default_rng(seed_for_reset).choice(self.index_ordering))
         else:
             self.index = (self.index + 1) % len(self.ds)
@@ -145,6 +149,8 @@ class NQHotpotQAWorker:
         self.has_won = False
         self.attempt = 0
         return question_str, {}
+    def get_ds_len(self):
+        return len(self.ds)
 
     
 
@@ -171,6 +177,7 @@ class NQHotpotQAEnvs:
         # Initialize Ray if not already initialized
         if not ray.is_initialized():
             ray.init()
+        self.split = split
         self.is_train = is_train
         self.group_n = group_n
         self.env_num = env_num
@@ -181,9 +188,13 @@ class NQHotpotQAEnvs:
         
         # Create Ray remote actors instead of processes
         self.workers = []
-        for _ in range(self.num_processes):
+        self.reset_count = 0
+        seeds = np.arange(env_num).repeat(group_n)
+        for i in range(self.num_processes):
+            seed_i = seeds[i]
             worker = NQHotpotQAWorker.remote(
-                seed,
+                seed_i,
+                env_num,
                 split,
                 force_full,
                 num_objectives
@@ -217,17 +228,23 @@ class NQHotpotQAEnvs:
             obs_list = np.array(obs_list)
         return obs_list, reward_list, done_list, info_list
 
+    def get_ds_len(self):
+        return ray.get(self.workers[0].get_ds_len.remote())
     def reset(self):
         """
         Perform reset in parallel.
         Different seeds will be assigned to each environment (or the same seed within a group).
         :return: (obs_list, info_list)
         """
-        if self.is_train:
-            seeds = np.random.randint(0, 2**16 - 1, size=self.env_num)
+        if self.split == 'test':
+            # we want to do one epoch, so we should increment the seed so it steps through the dataset.
+            seeds = np.arange(self.env_num) + self.reset_count
         else:
-            seeds = np.random.randint(2**16, 2**32 - 1, size=self.env_num)
-
+            if self.is_train:
+                seeds = np.random.randint(0, 2**16 - 1, size=self.env_num)
+            else:
+                seeds = np.random.randint(2**16, 2**32 - 1, size=self.env_num)
+        self.reset_count += 1
         # Repeat seed for environments in the same group
         seeds = np.repeat(seeds, self.group_n)
         seeds = seeds.tolist()
@@ -248,6 +265,9 @@ class NQHotpotQAEnvs:
         if isinstance(obs_list[0], np.ndarray):
             obs_list = np.array(obs_list)
         return obs_list, info_list
+    def get_epochs(self):
+        # we do one reset and then we rollout
+        return self.reset_count * self.env_num / self.get_ds_len()
 
     def close(self):
         """
