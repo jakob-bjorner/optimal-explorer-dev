@@ -33,6 +33,7 @@ import ast
 from itertools import product, permutations
 import os
 import asyncio
+import time
 
 class TrajectoryCollector:
     def __init__(self, config, tokenizer: PreTrainedTokenizer, processor=None):
@@ -320,6 +321,8 @@ class TrajectoryCollector:
             success (Dict[str, np.ndarray]): Success samples for each environment
             traj_uid (np.ndarray): Trajectory unique identifiers
         """
+        start_time = time.time()
+        print(start_time)
         # Initial observations from the environment
         obs, infos = envs.reset()
 
@@ -649,6 +652,9 @@ class TrajectoryCollector:
                 if is_done.all():
                     break
             # if they don't terminate, we give a -1 reward in the combolock setting.
+        
+        print(time.time() - start_time)
+        # breakpoint() # should look at how many tokens were generated and how many were used as prompt tokens. I guess this is documented.
         if self.config.env.non_terminal_penalty:
             episode_rewards[np.logical_not(is_done) | prompt_too_long] += -self.config.env.non_terminal_penalty
         # does episode reward not count towards GRPO? No it does, funny enough, the reward thing I think we record per step isn't used tho. seems just for logging.
