@@ -19,17 +19,18 @@ See verl-agent/examples/grpo_trainer/run_nqhotpotqa.sh and verl-agent/examples/g
 
 
 
-
+cd optimal-explorer-dev/
 uv venv --python 3.12.0
 source .venv/bin/activate
 uv pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 uv pip install packaging wheel
+( if the next line doesn't work citing some CUDA_HOME not set error, switch to conda and run everything again with this line inserted. conda install -c conda-forge cudatoolkit-dev)
 uv pip install flash-attn==2.7.4.post1 --no-build-isolation
-cd optimal-explorer-dev/verl-agent/
+cd verl-agent/
 uv pip install -e .
 uv pip install vllm==0.8.5
 
-cd optimal-explorer-dev
+cd .. # (optimal-explorer-dev)
 uv pip install -e .
 uv pip install debugpy
 wandb login
