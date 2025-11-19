@@ -2,8 +2,12 @@ import ray
 import numpy as np
 import json
 from openai import OpenAI
-
+from sweet_rl.environments import (HumanDesignInteractionEnv,
+                                   HumanInteractionEnv)
+from sweet_rl.utils import check_correctness
+from ...prompts import COLABBENCH_HUMAN_SIMULATOR_CODE_PROMPT
 @ray.remote(num_cpus=0.2)
+
 class ColabBenchWorker:
     """
     Ray remote actor that replaces the worker function.
@@ -26,22 +30,28 @@ class ColabBenchWorker:
     I was able to make it in a nice implementation, one tensor per trajectory.
     So, I can do this for the vanilla version of colabbench.
     Conclusion is I should restructure the action calls, 
-    but leave the action calls the same.
+    but leave the environment calls the same.
     """
-    def __init__(self, seed, split, hostname, port, task_type, max_steps):
+    def __init__(self, seed, num_envs, split, hostname, port, model_id, task_type, max_steps):
         """Initialize the gym environment in this worker"""
         self.client = OpenAI(base_url=f"http://{hostname}:{port}/v1", api_key="EMPTY")
+        # user_prompt_path = "../sweet_rl/prompts/human_simulator_code_prompt.txt"
+        # with open(user_prompt_path, "r") as fb:
+        #     self.human_prompt = fb.read() # problem_description, hidden_information, dialogue_history
+        self.human_prompt = COLABBENCH_HUMAN_SIMULATOR_CODE_PROMPT
+        self.max_steps = max_steps
+        self.env = HumanInteractionEnv(self.client, self.human_prompt, model_id, max_steps=max_steps)
         self.has_won = False
-        self.steps = 0
         self.split = split
-        self.dialogue_history = []
         input_path = f"../sweet_rl/data/backend_tasks/{split}.jsonl" 
+        self.index = -1
         with open(input_path, "r") as fb:
             self.tasks = [json.loads(line) for line in fb]
             # task["problem_description"], task["ground_truth"]
-        user_prompt_path = "../sweet_rl/prompts/human_simulator_code_prompt.txt"
-        with open(user_prompt_path, "r") as fb:
-            self.human_prompt = fb.read()
+        if self.split == 'test':
+            self.index_ordering = (seed + num_envs * np.arange(len(self.tasks))) % len(self.tasks)
+        else:
+            self.index_ordering = np.random.default_rng(seed).permutation(len(self.tasks))
 
     def reset(self, seed_for_reset=None):
         """Reset the environment with optional seed"""
@@ -49,49 +59,46 @@ class ColabBenchWorker:
             self.index = int(np.random.default_rng(seed_for_reset).choice(self.index_ordering))
         else:
             self.index = (self.index + 1) % len(self.tasks)
+        self.task = self.tasks[int(self.index_ordering[self.index])]
+        self.env.reset(self.task["problem_description"], self.task["ground_truth"])
         self.has_won = False
-        self.steps = 0 
-        return "", {}
+        return self.task["problem_description"], {}
     
     def step(self, action):
         """Execute a step in the environment"""
-        action, is_belief_generation_step = action
+        tag, action, is_belief_generation_step = action
+        info = {"attempt": self.env.steps+1, "is_last_step": self.env.steps+1==self.max_steps, "steps_remaining": self.max_steps - self.env.steps - 1, "problem_description": self.task["problem_description"], "ground_truth": self.task["ground_truth"]}
         if is_belief_generation_step:
             # the belief generation step is checked only on the top level env manager. 
             # This is just a noop so other environments can step if they need to.
             return "", 0, False, info | {"won":self.has_won}
-        # if self.is_terminated:
-        #     return "", 0, True, info | {"won":self.has_won}
+        if self.env.done:
+            return "", 0, True, info | {"won":self.has_won}
         # obs, _, done, info = self.env.step(action)
+        if tag == "code":
+            action = "I WANT TO ANSWER:" + action
 
-        raw_action = action
-
-        self.steps += 1
-        if "OUTPUT:" in action:
-            action = action.split("OUTPUT:")[1]
-            # remove additional OUTPUT: if exists
-            raw_action = "OUTPUT:".join(raw_action.split("OUTPUT:")[:2])
-
-        if "I WANT TO ANSWER:" in response or self.steps >= self.max_steps:
-            self.done = True
-            if "I WANT TO ANSWER:" in response:
-                self.answer = response.split("I WANT TO ANSWER:")[1]
-            else:
-                self.answer = response
+        dialog_history, _, done = self.env.step(action)
+        if dialog_history is not None:
+            env_response = dialog_history[-1]['content']
+        else:
+            env_response = "NOTHING!!!"
         # reward should only be given from the self.env.get_trajectory_score function
         info = info | {"won": False}
         if done:
-            reward = self.env.get_trajectory_score()
+            test_function = self.env.answer # this gets populated by environment when done is True for the first time.
+            reward = check_correctness(self.task['ground_truth'], test_function, self.task['test_cases'])
             if reward != -1:
                 info = info | {"won": True}
                 self.has_won = True
         else:
             reward = 0
-        return str_response, reward, done, info
+        return env_response, reward, done, info
     
-
-    def get_target(self):
-        return self.env.target_combination
+    def get_ds_len(self):
+        return len(self.tasks)
+    # def get_target(self):
+    #     return self.env.target_combination
     
 
 
@@ -105,8 +112,13 @@ class ColabBenchEnvs:
     """
 
     def __init__(self,
-                 max_attempts,
-                 vocab,
+                 split, 
+                 hostname, 
+                 port, 
+                 model_id,
+                 task_type,
+                 max_steps,
+                #  max_attempts,
                  seed=0,
                  env_num=1,
                  group_n=1,
@@ -122,17 +134,22 @@ class ColabBenchEnvs:
         self.num_processes = env_num * group_n
 
         np.random.seed(seed)
-        
+        self.reset_count = 0
         # Create Ray remote actors instead of processes
         self.workers = []
         for _ in range(self.num_processes):
             worker = ColabBenchWorker.remote(
-                seed,
-                3,
-                max_attempts,
-                vocab,
+                seed, 
+                env_num, 
+                split, 
+                hostname, 
+                port, 
+                model_id,
+                task_type,
+                max_steps,
             )
             self.workers.append(worker)
+        
 
     def step(self, actions):
         """
@@ -156,7 +173,6 @@ class ColabBenchEnvs:
             reward_list.append(reward)
             done_list.append(done)
             info_list.append(info)
-        
         if isinstance(obs_list[0], np.ndarray):
             obs_list = np.array(obs_list)
         return obs_list, reward_list, done_list, info_list
@@ -171,7 +187,7 @@ class ColabBenchEnvs:
             seeds = np.random.randint(0, 2**16 - 1, size=self.env_num)
         else:
             seeds = np.random.randint(2**16, 2**32 - 1, size=self.env_num)
-
+        self.reset_count += 1
         # Repeat seed for environments in the same group
         seeds = np.repeat(seeds, self.group_n)
         seeds = seeds.tolist()
@@ -192,7 +208,12 @@ class ColabBenchEnvs:
         if isinstance(obs_list[0], np.ndarray):
             obs_list = np.array(obs_list)
         return obs_list, info_list
-
+    
+    def get_ds_len(self):
+        return ray.get(self.workers[0].get_ds_len.remote())
+    def get_epochs(self):
+        # we do one reset and then we rollout
+        return self.reset_count * self.env_num / self.get_ds_len()
     def close(self):
         """
         Close all Ray actors.
@@ -205,8 +226,12 @@ class ColabBenchEnvs:
         self.close()
 
 
-def build_colabbench_envs(max_attempts,
-                        vocab,
+def build_colabbench_envs(split, 
+                        hostname, 
+                        port, 
+                        model_id,
+                        task_type,
+                        max_steps,
                         seed,
                         env_num,
                         group_n,
@@ -221,8 +246,12 @@ def build_colabbench_envs(max_attempts,
     - is_train: Determines the seed range used (train/test)
     """
     return ColabBenchEnvs(
-        max_attempts,
-        vocab,
+        split, 
+        hostname, 
+        port, 
+        model_id,
+        task_type,
+        max_steps,
         seed=seed,
         env_num=env_num,
         group_n=group_n,

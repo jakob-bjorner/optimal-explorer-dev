@@ -8,6 +8,7 @@ DEBUG=${DEBUG:-}
 SINGLE_CTX=${SINGLE_CTX:-False}
 MULTI_MSG=${MULTI_MSG:-True}
 MAX_ATTEMPTS=${MAX_ATTEMPTS:-6}
+NUM_OBJECTIVES=${NUM_OBJECTIVES:-2}
 if (( $NUM_OBJECTIVES >= 8 )); then
     MAX_ATTEMPTS=20
 fi
@@ -100,9 +101,10 @@ python3 -m examples.data_preprocess.prepare \
 # DEBUG=GRPO_INSTRUCT IS_MEM1=True bash examples/grpo_trainer/run_nqhotpotqa.sh 
 # the instruct version of this model should be tuned at least sensibly, because there could be minor things which cause it's performance to be worse than we expect. And we want the sensible thing to happen that it performs better than MEM1.
 # peak token lengths experiment but you put a length penalty on the belief lengths.
-# DEBUG=GRPO_INSTRUCT LENPEN=0.0 bash examples/grpo_trainer/run_nqhotpotqa.sh
-# add a parameter to only penalize the beliefs if it is above a particular length.
-# add parameter for forcing full step length in nqhotpotqa. Test this in modal.
+# DEBUG=GRPO_INSTRUCT LENPEN=0.0002 bash examples/grpo_trainer/run_nqhotpotqa.sh; DEBUG=GRPO_INSTRUCT LENPEN=0.01 bash examples/grpo_trainer/run_nqhotpotqa.sh; 
+# DEBUG=GRPO_INSTRUCT SINGLE_CTX=True MULTI_MSG=False bash examples/grpo_trainer/run_nqhotpotqa.sh
+
+
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -151,7 +153,8 @@ python3 -m verl.trainer.main_ppo \
     env.max_steps=$MAX_STEPS \
     env.non_terminal_penalty=0.0 \
     env.rollout.n=$group_size \
-    env.belief_length_penalty=$LENPEN \
+    env.belief_length_penalty=0.0 \
+    trainer.post_normalization_length_penalty=$LENPEN \
     +env.force_full_step_len=$FORCE_FULL \
     +env.split=train \
     +env.num_objectives=2 \
@@ -165,7 +168,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.experiment_name=nqhotpotqa_grpo_qwen2.5-7b-${MODEL_DESC}_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}_is_mem1_${IS_MEM1}_belief_len_pen_${LENPEN}${DEBUG} \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
-    trainer.save_freq=20 \
+    trainer.save_freq=100 \
     trainer.test_freq=10000 \
-    trainer.total_epochs=400 \
+    trainer.total_epochs=260 \
     trainer.val_before_train=False $@

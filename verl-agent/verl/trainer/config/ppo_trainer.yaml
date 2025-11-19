@@ -263,6 +263,7 @@ algorithm:
 
 trainer:
   belief_state_grading: 0.0
+  post_normalization_length_penalty: 0.0
   only_gen_once: False
   balance_batch: True
   total_epochs: 30
