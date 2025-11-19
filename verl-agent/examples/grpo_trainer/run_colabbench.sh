@@ -38,6 +38,8 @@ fi
 LENPEN=${LENPEN:-0}
 FORCE_FULL=${FORCE_FULL:-False}
 GRADE_BELIEF=${GRADE_BELIEF:-0.0}
+GRADE_BELIEF_TYPE=${GRADE_BELIEF_TYPE:-0}
+# 0 corresponds to belief grading with full reconstruction, and 1 with reconstructing only observations.
 
 
 # invalid_action_penalty_coef=0.0
@@ -156,8 +158,9 @@ python3 -m verl.trainer.main_ppo \
     trainer.belief_state_grading=$GRADE_BELIEF \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
+    +trainer.belief_state_grading_type=$GRADE_BELIEF_TYPE \
     trainer.project_name='verl_agent_alfworld' \
-    trainer.experiment_name=colabbench_grpo_qwen2.5-7b-${MODEL_DESC}_16_seed${SEED}_sc_${SINGLE_CTX}_belief_promp_${MULTI_MSG}_is_mem1_${IS_MEM1}_belief_lp_${LENPEN}_bg_${GRADE_BELIEF}${DEBUG} \
+    trainer.experiment_name=colabbench_grpo_qwen2.5-7b-${MODEL_DESC}_16_seed${SEED}_sc_${SINGLE_CTX}_belief_promp_${MULTI_MSG}_is_mem1_${IS_MEM1}_belief_lp_${LENPEN}_bg_${GRADE_BELIEF}_${GRADE_BELIEF_TYPE}${DEBUG} \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=50 \
