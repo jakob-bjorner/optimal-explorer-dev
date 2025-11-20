@@ -975,6 +975,7 @@ class TrajectoryCollector:
                     new_total_batch_list = copy(total_batch_list)
                     new_episode_rewards = episode_rewards.tolist()
                     new_episode_lengths = episode_lengths.tolist()
+                    new_episode_penalties = episode_penalties.tolist()
                     new_traj_uid = traj_uid.tolist()
                     i = 0
                     belief_states_graded_in_chain = 0
@@ -995,6 +996,12 @@ class TrajectoryCollector:
                         new_total_batch_list.extend([[primary_belief_context], [secondary_belief_context]])
                         new_episode_rewards.extend([primary_reward, secondary_reward])
                         new_episode_lengths.extend([1, 1])
+                        if secondary_belief_context['is_action_valid']:
+                            avg = (primary_belief_context["filtered_belief_generations_len"] + secondary_belief_context["filtered_belief_generations_len"]) / 2
+                            new_episode_penalties.extend([primary_belief_context["filtered_belief_generations_len"]-avg, secondary_belief_context["filtered_belief_generations_len"]-avg])
+                        else:
+                            new_episode_penalties.extend([0,0])
+
                         new_traj_uid.extend([primary_traj_uid, secondary_traj_uid])
                         if primary_reward < -1.6: # very heuristic guess. 
                             # we skip the rest of the trajectory.
@@ -1007,21 +1014,25 @@ class TrajectoryCollector:
                     total_batch_list = new_total_batch_list
                     episode_rewards = np.array(new_episode_rewards)
                     episode_lengths = np.array(new_episode_lengths)
+                    episode_penalties = np.array(new_episode_penalties)
                     traj_uid = np.array(new_traj_uid)
                     success['total_avg_belief_grade_success_rate'] = np.array([belief_grades[belief_grade_token_mask].mean().item()] * len(primary_belief_contexts)) / len(primary_belief_contexts)
                     success['fraction_parsable_belief_states_success_rate'] = np.array([belief_states_graded_in_chain] * len(primary_belief_contexts)) / len(primary_belief_contexts)
-                all_belief_lens = np.array([ls[0]['filtered_belief_generations_len'] if ls[0]['info'].get('is_belief_grading_context', False) else 0 for ls in total_batch_list])
-                valids = np.array([ls[0]['is_action_valid'] if ls[0]['info'].get('is_belief_grading_context', False) else 0 for ls in total_batch_list])
-                valids = np.logical_and(valids, all_belief_lens > 300)
-                # breakpoint()
-                if valids.sum() > 0:
-                    mean_belief_len = all_belief_lens[valids == 1].mean()
-                    episode_penalties_temp = np.zeros_like(episode_rewards)
-                    episode_penalties_temp[valids == 1] = all_belief_lens[valids == 1] # - mean_belief_len
-                    # breakpoint()
-                    episode_penalties = episode_penalties_temp
-                else:
-                    episode_penalties = np.array(np.zeros_like(episode_penalties).tolist() + [0] * (len(episode_rewards) - len(episode_penalties)))
+                if len(episode_penalties) != len(episode_rewards):
+                    episode_penalties = np.array(episode_penalties.tolist() + [0] * (len(episode_rewards) - len(episode_penalties)))# we need a longer episode penalties to account for the new belief states being graded.
+
+                # all_belief_lens = np.array([ls[0]['filtered_belief_generations_len'] if ls[0]['info'].get('is_belief_grading_context', False) else 0 for ls in total_batch_list])
+                # valids = np.array([ls[0]['is_action_valid'] if ls[0]['info'].get('is_belief_grading_context', False) else 0 for ls in total_batch_list])
+                # valids = np.logical_and(valids, all_belief_lens > 0)
+                # # breakpoint()
+                # if valids.sum() > 0:
+                #     mean_belief_len = all_belief_lens[valids == 1].mean()
+                #     episode_penalties_temp = np.zeros_like(episode_rewards)
+                #     episode_penalties_temp[valids == 1] = all_belief_lens[valids == 1] # - mean_belief_len
+                #     # breakpoint()
+                #     episode_penalties = episode_penalties_temp
+                # else:
+                #     episode_penalties = np.array(np.zeros_like(episode_penalties).tolist() + [0] * (len(episode_rewards) - len(episode_penalties)))
                 # episode_penalties = np.array(episode_penalties.tolist() + [0] * (len(episode_rewards) - len(episode_penalties)))# we need a longer episode penalties to account for the new belief states being graded.
                 # for _ in zip([1]): # permutations
                 #     # check here if the context is valid of invalid, because we just passed it through.
