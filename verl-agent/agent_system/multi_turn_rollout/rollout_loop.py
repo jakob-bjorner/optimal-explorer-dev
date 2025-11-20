@@ -1010,10 +1010,10 @@ class TrajectoryCollector:
                     traj_uid = np.array(new_traj_uid)
                     success['total_avg_belief_grade_success_rate'] = np.array([belief_grades[belief_grade_token_mask].mean().item()] * len(primary_belief_contexts)) / len(primary_belief_contexts)
                     success['fraction_parsable_belief_states_success_rate'] = np.array([belief_states_graded_in_chain] * len(primary_belief_contexts)) / len(primary_belief_contexts)
-                all_belief_lens = np.array([l['filtered_belief_generations_len'] if l['info'].get('is_belief_grading_context', False) else 0 for ls in total_batch_list for l in ls])
-                valids = np.array([l['is_action_valid'] if l['info'].get('is_belief_grading_context', False) else 0 for ls in total_batch_list for l in ls])
+                all_belief_lens = np.array([ls[0]['filtered_belief_generations_len'] if ls[0]['info'].get('is_belief_grading_context', False) else 0 for ls in total_batch_list])
+                valids = np.array([ls[0]['is_action_valid'] if ls[0]['info'].get('is_belief_grading_context', False) else 0 for ls in total_batch_list])
                 valids = np.logical_and(valids, all_belief_lens > 300)
-                breakpoint()
+                # breakpoint()
                 if valids.sum() > 0:
                     mean_belief_len = all_belief_lens[valids == 1].mean()
                     episode_penalties_temp = np.zeros_like(episode_rewards)
