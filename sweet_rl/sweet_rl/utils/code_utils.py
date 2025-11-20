@@ -110,16 +110,18 @@ def check_correctness(ground_truth_function, test_function, test_cases):
 
         # timeout precautions
         try:
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(1)  # Set an alarm for 10 seconds
-            # print(test_function)
-            # if "match_player" in test_function:
-            #     return 0
-            test_output = get_function_output(test_function, test_case)
-        except TimeoutError:
-            test_output = None
-        finally:
-            signal.alarm(0)  # Reset the alarm
+            try:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(1)  # Set an alarm for 10 seconds
+                # print(test_function)
+                # if "match_player" in test_function:
+                #     return 0
+                test_output = get_function_output(test_function, test_case)
+                signal.alarm(0)  # Reset the alarm
+            except TimeoutError:
+                test_output = None
+        except:
+            print("some other exception")
         try:
             if ground_truth_output == test_output and ground_truth_output is not None:
                 num_correct += 1
