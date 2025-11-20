@@ -975,7 +975,8 @@ class TrajectoryCollector:
                     new_total_batch_list = copy(total_batch_list)
                     new_episode_rewards = episode_rewards.tolist()
                     new_episode_lengths = episode_lengths.tolist()
-                    new_episode_penalties = episode_penalties.tolist()
+                    # if you have penalties enabled for belief lengths, you shouldn't have them enabled for overall episode length. This encourages very short trajectories.
+                    new_episode_penalties = np.zeros_like(episode_penalties).tolist()
                     new_traj_uid = traj_uid.tolist()
                     i = 0
                     belief_states_graded_in_chain = 0
@@ -1000,8 +1001,13 @@ class TrajectoryCollector:
                             avg = (primary_belief_context["filtered_belief_generations_len"] + secondary_belief_context["filtered_belief_generations_len"]) / 2
                             if primary_belief_context["filtered_belief_generations_len"] == secondary_belief_context["filtered_belief_generations_len"]:
                                 avg = avg - 20 # we will penalize both a bit if they are equal? this to discourage a deterministic belief generation which just copies the inputs directly.
+                            # I only want to apply the penalty to things larger than 100, if the length degenerates to 0, I don't want this to be rewarded. This is very bad.
+                            # so if both are larger than 100, then I do this calculation, which will favor the shorter of the two.
+                            if primary_belief_context["filtered_belief_generations_len"] > 100 and secondary_belief_context["filtered_belief_generations_len"] > 100:
+                                new_episode_penalties.extend([primary_belief_context["filtered_belief_generations_len"]-avg, secondary_belief_context["filtered_belief_generations_len"]-avg])
+                            else: 
+                                new_episode_penalties.extend([0, 0])
 
-                            new_episode_penalties.extend([primary_belief_context["filtered_belief_generations_len"]-avg, secondary_belief_context["filtered_belief_generations_len"]-avg])
                         else:
                             new_episode_penalties.extend([0,0])
 
