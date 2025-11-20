@@ -949,6 +949,198 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
                                                                            "belief_generation_failures_success_rate": np.array([self.belief_generation_failures/batch_size]*batch_size),
                                                                            "successful_searches_success_rate": np.array([self.successful_searches/batch_size]*batch_size)} # just for the metric calc to be the same.
 
+class ColabBenchEnvironmentManager(EnvironmentManagerBase):
+    def __init__(self, envs, projection_f, config):
+        self.memory = []
+        super().__init__(envs, projection_f, config)
+
+    def reset(self):
+        text_obs, infos = self.envs.reset()
+        self.task_desciptions = text_obs
+        # text_obs is the questions in string form, already trimmed, should put the prompt text around this now.
+
+        # self.supervisors = [info['supervisor'] for info in infos]
+        self.memory = []
+        self.action_or_belief = np.zeros(len(text_obs), dtype=np.bool) # 0 means actions being generated, 1 means beliefs
+        self.prior_beliefs = [None] * len(text_obs)
+        self.prior_belief_messages: List = [None] * len(text_obs) # this for tracking when a belief is not being generated correctly.
+        self.tasks = text_obs.copy()
+        self.pre_text_obs = text_obs
+        self.belief_generation_failures = 0
+        self.action_generation_failures = 0
+        self.successful_searches = 0
+        is_not_processing = np.zeros(len(text_obs), dtype=np.bool)
+
+        chat = self._build_chat_obs(text_obs, None, None, None, None, None, None, None, is_not_processing, None, init=True)
+        return {'text': ['']*len(chat), 'image': None, 'anchor': text_obs, 'chat': chat}, infos
+
+    def get_belief_from_output_text(self, text_beliefs_raw: List[str]):
+        tags, action_or_belief_texts, valids = self.projection_f(text_beliefs_raw, np.ones(len(text_beliefs_raw)))
+        return action_or_belief_texts, valids
+
+    def step(self, text_actions: List[str], is_not_processing, tokenizer):
+        # generate_belief = bool(self.step_idx % 2 != 0) This doesn't determine whether belief is generated or not lol. 
+        # belief determination is a property of the environment tho, so should maintain belief or not as an array, 
+        # where I can change belief or not depending on if a valid action is passed in either case.
+        tags, action_or_belief_texts, valids = self.projection_f(text_actions, self.action_or_belief)
+        skip_sampling_mdp = self.action_or_belief | ~np.array(valids, dtype=bool) | is_not_processing
+        actions = list(zip(tags, action_or_belief_texts, skip_sampling_mdp))
+        text_obs, rewards, dones, infos = self.envs.step(actions) 
+        dones = np.logical_or(dones, np.logical_not(valids)) # we inheret the if invalid just terminate logic, and this helped us a lot.
+        
+        # ok, converting the nqhotpotqa code to colabbench. Colab bench should be much simpler. 
+        # Does it need to support mem1? (I'll say yes so long as its easy for now.)
+        # Should really put the logic handling the single context and belief stuff in a general parent class.
+        for i, (action, content) in enumerate(zip(tags, action_or_belief_texts)):
+            # update the info dict with information on whether it was a action or belief being generated or not
+            infos[i]["action_or_belief"] = int(self.action_or_belief[i])
+            infos[i]['is_action_valid'] = int(valids[i])
+
+
+        new_action_or_belief = ~(self.action_or_belief & np.array(valids, dtype=np.bool)) # you go to belief state unless you generate a valid belief while in belief state.
+        if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
+            new_action_or_belief = self.action_or_belief * 0
+        if self.config.env.is_mem1:
+            new_action_or_belief = self.action_or_belief * 0 # we handle the logic for mem1 with only actions even though we want beliefs to be generated as well.
+            # if invalid in mem1, it just terminates.
+            is_not_processing = ~np.array(valids, dtype=np.bool) | is_not_processing
+            dones = [(d or not v) for d, v in zip(dones, valids)]
+        # not sure, but the logic for the below to metrics might be wrong for mem1. not relevant enough to fix.
+        self.belief_generation_failures += (self.action_or_belief & ~np.array(valids, dtype=np.bool) & ~is_not_processing).sum()
+        self.action_generation_failures += (~self.action_or_belief & ~np.array(valids, dtype=np.bool) & ~is_not_processing).sum()
+        self.memory.append(deepcopy((text_obs, rewards, dones, infos, new_action_or_belief, valids, action_or_belief_texts)))
+        self.pre_text_obs = text_obs
+
+        # full_text_obs = self.build_text_obs(text_obs)
+        chat = self._build_chat_obs(text_obs, text_actions, tags, infos, action_or_belief_texts, valids, self.action_or_belief, new_action_or_belief, is_not_processing, tokenizer)
+        
+
+        beliefs = [belief if valid and tag == 'belief' else "" for i, (tag, belief, valid) in enumerate(zip(tags, action_or_belief_texts, valids))]
+        actions = [action if valid and (tag == 'search' or tag == "answer") else "" for i, (tag, action, valid) in enumerate(zip(tags, action_or_belief_texts, valids))]
+        self.action_or_belief = new_action_or_belief
+        next_observations = {'text': ['']*len(chat), "filtered_belief_generations": beliefs, "filtered_action_generations": actions, 'chat': chat, 'image': None, 'anchor': text_obs}
+        rewards = to_numpy(rewards)
+        dones = to_numpy(dones)
+
+        return next_observations, rewards, dones, infos
+
+    def _build_chat_obs(self, text_obs, full_text_actions, tags, infos, actions_or_beliefs, valids, old_action_or_belief, new_action_or_belief, is_not_processing, tokenizer, init: bool = False)-> List[Dict[str,str]]:
+        postprocess_text_obs = []
+        # valids wil be none, and actions will also be none, so I just give the chat history which is default for every first interaction.
+        for i in range(len(text_obs)):
+            if is_not_processing[i]:
+                postprocess_text_obs.append([{'role': "user", 'content': "yo"}]) # this will be replaced at the rollout_loop.py level, and this if statement is just here to filter from going through the logic needlessly
+                continue
+            if init:
+                # if self.config.env.is_mem1:
+                #     postprocess_text_obs.append([{'role': "user", 'content': get_COLABBENCH_AGENT_FIRST_MESSAGE_MEM1(self.task_desciptions[i], self.config.actor_rollout_ref.rollout.instruct)}])
+                #     # need to add the generation template manually, because it was done wrong in MEM1.
+                # else:
+                
+                postprocess_text_obs.append([{'role': "system", 'content': COLABBENCH_AGENT_FIRST_MESSAGE},
+                                            {'role': "user", 'content': self.task_desciptions[i]}])
+            else:
+                # list of 0 or 1 indicating action or belief being generated.
+                # this is updated right before this function call, 
+                # so the chat should be preparing the lm call to generate the indicated item.
+                # self.action_or_belief 
+                # self.memory
+                if new_action_or_belief[i]:
+                    # this is belief generation prep
+                    # system prompt automatically added when there is no spec.
+                    if len(self.memory) == 1:
+                        # first belief generation message.
+                        prior_belief = COLABBENCH_NO_PRIOR_BELIEF_MESSAGE
+                    else:
+                        prior_belief = self.prior_beliefs[i]
+                    # we may have just come from a long string of belief generation failures, 
+                    # so we need to reconstruct the history of failures if this is the case.
+                    if old_action_or_belief[i]:
+                        # we were previously generating a belief, 
+                        # and are still generating a belief, in this case, 
+                        # we need to correct some error in the belief generation.
+                        new_belief_messages = deepcopy(self.prior_belief_messages[i])
+                        # just regenerate, you don't want to throw anything away, and you didn't do it right, 
+                        # so yeah, it might happen infinitely whatever. with temp 1 in our training and test setting, should be fine.
+                        # new_belief_messages += [{'role': "assistant", 'content': full_text_actions[i]},
+                        #                         {'role': 'user', "content": COLABBENCH_BELIEF_GENERATION_FAILURE_MSG}]
+                        if self.config.actor_rollout_ref.rollout.single_context:
+                            new_belief_messages = [{'role': 'user', "content": COLABBENCH_BELIEF_GENERATION_FAILURE_MSG}]
+                    else:
+                        # we are for the first time generating a belief message
+                        if valids[i]: 
+                            agent_action = actions_or_beliefs[i]
+                            env_response = text_obs[i]
+                        else:
+                            agent_action = "invalid action"
+                            env_response = COLABBENCH_ENV_RESPONSE
+
+                        agent_first_message = COLABBENCH_AGENT_FIRST_MESSAGE
+                        new_belief_messages = [{'role': "user", 'content': COLABBENCH_BELIEF_PROMPT.format(agent_first_message=agent_first_message,
+                                                                                                           first_user_query=self.task_desciptions[i],
+                                                                                                           belief_state=prior_belief,
+                                                                                                           agent_action=agent_action,
+                                                                                                           env_response=env_response)}]
+                        if self.config.actor_rollout_ref.rollout.single_context:
+                            new_belief_messages = [{'role': "user", 'content': env_response}]
+                            if self.config.actor_rollout_ref.rollout.belief_multiple_messages:
+                                new_belief_messages += [{'role': 'user', 'content': COLABBENCH_BELIEF_PROMPT_SINGLE_CONTEXT}]
+                        # prior_belief = self.prior_beliefs[i]
+                    self.prior_belief_messages[i] = new_belief_messages
+                    postprocess_text_obs.append(new_belief_messages)
+                else:
+                    # this is action generation prep
+                    # if self.config.env.is_mem1:
+                    #     # you can only be generating an action after a successful belief generation with the first prompt being a special case in this repo.
+                    #     # this extraction strategy is taken from mem1
+                    #     belief = "<think>" + full_text_actions[i].split('<think>')[1] if '<think>' in full_text_actions[i] else full_text_actions[i]
+                        
+                    #     new_action_messages = [{'role': "user", 'content': (get_COLABBENCH_FULL_AGENT_FIRST_MESSAGE_MEM1 if self.config.env.force_full_step_len else get_COLABBENCH_AGENT_FIRST_MESSAGE_MEM1)(self.task_desciptions[i], self.config.actor_rollout_ref.rollout.instruct)},
+                    #                            {'role': 'assistant', "content": belief},
+                    #                            {'role': 'user', 'content': text_obs[i]}]
+                    #     postprocess_text_obs.append(new_action_messages)
+                    # else:
+                    if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
+                        env_response = text_obs[i]
+                        hint = "It is your last step." if infos[i]['is_last_step'] else f"You have {infos[i]['steps_remaining']} steps remaining."
+                        new_action_messages = [{'role': "user", 'content': env_response + "\n" + COLABBENCH_TURNS_REMAINING_HINT.format(hint=hint).strip()}]
+                        postprocess_text_obs.append(new_action_messages)
+                    else:
+                        assert valids[i], f"must be valid, but got {valids[i]=}"
+                        # you can only be generating an action after a successful belief generation with the first prompt being a special case in this repo.
+                        belief = actions_or_beliefs[i]
+                        self.prior_beliefs[i] = belief
+                        self.prior_belief_messages[i] = None
+                        agent_first_message = COLABBENCH_AGENT_FIRST_MESSAGE
+                        hint = "It is your last step." if infos[i]['is_last_step'] else f"You have {infos[i]['steps_remaining']} steps remaining."
+                        new_action_messages = [{'role':'user', 'content': COLABBENCH_ACTION_PROMPT.format(agent_first_message=agent_first_message, first_user_query=self.task_desciptions[i], belief_state=belief, hint=hint)}]
+                        if self.config.actor_rollout_ref.rollout.single_context:
+                            new_action_messages = [{'role': "user", 'content': COLABBENCH_ACTION_PROMPT_SINGLE_CONTEXT + COLABBENCH_TURNS_REMAINING_HINT.format(hint=hint)}]
+                        postprocess_text_obs.append(new_action_messages)
+        return postprocess_text_obs
+    def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
+        """
+        Evaluate if the episodes are successful or not. 
+        (Default) implementation is to check info['won'] of the last step.
+        
+        Returns:
+        - success (np.ndarray or torch.Tensor): 1 if the episode is successful, 0 otherwise.
+        """
+        total_infos = kwargs['total_infos']
+        total_batch_list = kwargs['total_batch_list']
+        batch_size = len(total_batch_list)
+        
+        success = defaultdict(list)
+        
+        for bs in range(batch_size):
+            self._process_batch(bs, total_batch_list, total_infos, success)
+        
+        assert len(success['success_rate']) == batch_size
+
+        return {key: np.array(value) for key, value in success.items()} | {"action_generation_failures_success_rate": np.array([self.action_generation_failures/batch_size]*batch_size), 
+                                                                           "belief_generation_failures_success_rate": np.array([self.belief_generation_failures/batch_size]*batch_size),
+                                                                           "successful_searches_success_rate": np.array([self.successful_searches/batch_size]*batch_size)} # just for the metric calc to be the same.
+
 def make_envs(config):
     """
     Create enviroments 
@@ -1050,6 +1242,15 @@ def make_envs(config):
         projection_f = partial(nqhotpotqa_projection)
         envs = NQHotpotQAEnvironmentManager(_envs, projection_f, config)
         val_envs = NQHotpotQAEnvironmentManager(_val_envs, projection_f, config)
+        return envs, val_envs
+    elif "colabbench" in config.env.env_name.lower():
+        from agent_system.environments.env_package.colabbench import build_colabbench_envs, colabbench_projection
+        _envs = build_colabbench_envs(split=config.env.split, hostname=config.env.hostname, port=config.env.port, model_id=config.env.model_id, task_type=config.env.task_type, max_steps=config.env.max_attempts, seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, )
+        _val_envs = build_colabbench_envs(split=config.env.split, hostname=config.env.hostname, port=config.env.port, model_id=config.env.model_id, task_type=config.env.task_type, max_steps=config.env.max_attempts, seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False)
+
+        projection_f = partial(colabbench_projection)
+        envs = ColabBenchEnvironmentManager(_envs, projection_f, config)
+        val_envs = ColabBenchEnvironmentManager(_val_envs, projection_f, config)
         return envs, val_envs
     else:
         print("Environment not supported")

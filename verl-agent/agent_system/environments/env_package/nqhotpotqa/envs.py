@@ -141,7 +141,7 @@ class NQHotpotQAWorker:
             self.index = int(np.random.default_rng(seed_for_reset).choice(self.index_ordering))
         else:
             self.index = (self.index + 1) % len(self.ds)
-        # for this environment, it actually does matter what we return, 
+        # for this environment, it actually does matter what we return,
         # because the first observation needs to contain the question information
         self.data = self.ds[int(self.index_ordering[self.index])]
         prompt_str: str = self.data['prompt'][0]['content']

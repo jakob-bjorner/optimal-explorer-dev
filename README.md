@@ -19,19 +19,21 @@ See verl-agent/examples/grpo_trainer/run_nqhotpotqa.sh and verl-agent/examples/g
 
 
 
-
+cd optimal-explorer-dev/
 uv venv --python 3.12.0
 source .venv/bin/activate
 uv pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 uv pip install packaging wheel
+( if the next line doesn't work citing some CUDA_HOME not set error, switch to conda and run everything again with this line inserted. conda install -c conda-forge cudatoolkit-dev)
 uv pip install flash-attn==2.7.4.post1 --no-build-isolation
-cd optimal-explorer-dev/verl-agent/
+cd verl-agent/
 uv pip install -e .
 uv pip install vllm==0.8.5
 
-cd optimal-explorer-dev
+cd .. # (optimal-explorer-dev)
 uv pip install -e .
 uv pip install debugpy
+uv pip install peft==0.17.0 # this is a sad dependancy
 wandb login
 
 
@@ -76,6 +78,28 @@ export OPENROUTER_API_KEY=YOUR_KEY
 B=7 train_data_size=16 GRADE_BELIEF=2.0 DEBUG=combolock_vs_r1_new_parse4 bash examples/grpo_trainer/run_combolock.sh
 
 
+For replicating results from ColabBench, 
+
+Ensure you have an up to date environment for running the VLLM server. which should be seperate from the environment used for running our code.
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv pip install vllm --torch-backend=auto
+
+Ensure all the backend data from colabbench is initialized.
+see readme for sweet_RL for installing geckodriver, and getting things up.
+wget https://github.com/mozilla/geckodriver/releases/download/v0.35.0/geckodriver-v0.35.0-linux64.tar.gz
+tar -xvzf geckodriver-v0.35.0-linux64.tar.gz
+mkdir ~/bin/
+mv geckodriveer ~/bin/
+echo "export PATH=$PATH:~/bin" >> ~/.bashrc
+source ~/.bashrc
+geckodriver --version
+
+activate verl-agent environment
+cd sweet_rl
+uv pip install -e .
+// may need to use hf download instead.
+huggingface-cli download --repo-type dataset facebook/collaborative_agent_bench backend_tasks/train.jsonl backend_tasks/test.jsonl colbench_code_offline_15k_llama8b.jsonl --local-dir data
 
 ```bash
 git submodule update --init --recursive
@@ -85,3 +109,5 @@ git submodule update --init --recursive
 ```bash
 pip install -e .
 ```
+
+
