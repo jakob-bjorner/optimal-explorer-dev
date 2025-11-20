@@ -96,6 +96,7 @@ python3 -m examples.data_preprocess.prepare \
 # DEBUG=GRPO_INSTRUCT LENPEN=0.0002 bash examples/grpo_trainer/run_colabbench.sh
 # DEBUG=GRPO_INSTRUCT_G_BG GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh
 # DEBUG=GRPO_INSTRUCT_G_BG_2048 MAX_RES_LENGTH=2048 GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh
+# DEBUG=GRPO_INSTRUCT_G_BG GRADE_BELIEF_TYPE=1 GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh
 
 
 
@@ -159,6 +160,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     +trainer.belief_state_grading_type=$GRADE_BELIEF_TYPE \
+    +trainer.ceiling_belief_grading_reward=-0.6 \
     trainer.project_name='verl_agent_alfworld' \
     trainer.experiment_name=colabbench_grpo_qwen2.5-7b-${MODEL_DESC}_16_seed${SEED}_sc_${SINGLE_CTX}_belief_promp_${MULTI_MSG}_is_mem1_${IS_MEM1}_belief_lp_${LENPEN}_bg_${GRADE_BELIEF}_${GRADE_BELIEF_TYPE}${DEBUG} \
     trainer.n_gpus_per_node=4 \

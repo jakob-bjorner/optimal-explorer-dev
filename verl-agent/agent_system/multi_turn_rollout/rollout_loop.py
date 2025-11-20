@@ -773,6 +773,7 @@ class TrajectoryCollector:
                     new_belief_context_dict['info'] = deepcopy(new_belief_context_dict['info']) # this shouldn't be necessary
                     new_belief_context_dict['info']["is_action_valid"] = int(new_belief_valids[i])
                     new_belief_context_dict['filtered_belief_generations'] = new_belief_action_or_belief_texts[i]
+                    new_belief_context_dict['filtered_belief_generations_len'] = self.tokenizer.encode(new_belief_action_or_belief_texts[i]).__len__()
                     new_belief_context_dict['response_ids_str'] = new_belief_response_strs[i]
                 all_belief_contexts = flattened_valid_belief_contexts + new_belief_contexts
                 for c in all_belief_contexts:
@@ -968,7 +969,7 @@ class TrajectoryCollector:
                     belief_grades[belief_grade_token_mask] = -10 # this is just empty seq, so shouldn't matter what value I set it to. doing -10 for safety tho.
 
                     for c, belief_grade in zip(all_belief_contexts, belief_grades):
-                        c['info']['belief_grade'] = (belief_grade.item() // 0.2) * 0.2 # rounding to nearest 0.2 because we use GRPO normalizing by std, which will take the difference too hard.
+                        c['info']['belief_grade'] = c['info']['belief_grade'] = min((belief_grade.item() // 0.2) * 0.2, self.config.trainer.ceiling_belief_grading_reward) # rounding to nearest 0.2 because we use GRPO normalizing by std, which will take the difference too hard.
 
                     primary_belief_contexts, secondary_belief_contexts = all_belief_contexts[:len(flattened_valid_belief_contexts)], all_belief_contexts[len(flattened_valid_belief_contexts):]
                     new_total_batch_list = copy(total_batch_list)
@@ -1009,7 +1010,19 @@ class TrajectoryCollector:
                     traj_uid = np.array(new_traj_uid)
                     success['total_avg_belief_grade_success_rate'] = np.array([belief_grades[belief_grade_token_mask].mean().item()] * len(primary_belief_contexts)) / len(primary_belief_contexts)
                     success['fraction_parsable_belief_states_success_rate'] = np.array([belief_states_graded_in_chain] * len(primary_belief_contexts)) / len(primary_belief_contexts)
-                episode_penalties = np.array(episode_penalties.tolist() + [0] * (len(episode_rewards) - len(episode_penalties)))# we need a longer episode penalties to account for the new belief states being graded.
+                all_belief_lens = np.array([l['filtered_belief_generations_len'] if l['info'].get('is_belief_grading_context', False) else 0 for ls in total_batch_list for l in ls])
+                valids = np.array([l['is_action_valid'] if l['info'].get('is_belief_grading_context', False) else 0 for ls in total_batch_list for l in ls])
+                valids = np.logical_and(valids, all_belief_lens > 300)
+                breakpoint()
+                if valids.sum() > 0:
+                    mean_belief_len = all_belief_lens[valids == 1].mean()
+                    episode_penalties_temp = np.zeros_like(episode_rewards)
+                    episode_penalties_temp[valids == 1] = all_belief_lens[valids == 1] - mean_belief_len
+                    # breakpoint()
+                    episode_penalties = episode_penalties_temp
+                else:
+                    episode_penalties = np.array(np.zeros_like(episode_penalties).tolist() + [0] * (len(episode_rewards) - len(episode_penalties)))
+                # episode_penalties = np.array(episode_penalties.tolist() + [0] * (len(episode_rewards) - len(episode_penalties)))# we need a longer episode penalties to account for the new belief states being graded.
                 # for _ in zip([1]): # permutations
                 #     # check here if the context is valid of invalid, because we just passed it through.
                 #     then from the info, apply it to get the correct beleif state, and if we skip the shit, then go to the end of the parent_traj_uid. Also should do a while True:?
