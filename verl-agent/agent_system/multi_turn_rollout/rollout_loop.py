@@ -1017,7 +1017,7 @@ class TrajectoryCollector:
                 if valids.sum() > 0:
                     mean_belief_len = all_belief_lens[valids == 1].mean()
                     episode_penalties_temp = np.zeros_like(episode_rewards)
-                    episode_penalties_temp[valids == 1] = all_belief_lens[valids == 1] - mean_belief_len
+                    episode_penalties_temp[valids == 1] = all_belief_lens[valids == 1] # - mean_belief_len
                     # breakpoint()
                     episode_penalties = episode_penalties_temp
                 else:
