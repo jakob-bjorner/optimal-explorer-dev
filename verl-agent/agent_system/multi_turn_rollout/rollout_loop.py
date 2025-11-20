@@ -998,6 +998,9 @@ class TrajectoryCollector:
                         new_episode_lengths.extend([1, 1])
                         if secondary_belief_context['is_action_valid']:
                             avg = (primary_belief_context["filtered_belief_generations_len"] + secondary_belief_context["filtered_belief_generations_len"]) / 2
+                            if primary_belief_context["filtered_belief_generations_len"] == secondary_belief_context["filtered_belief_generations_len"]:
+                                avg = avg - 20 # we will penalize both a bit if they are equal? this to discourage a deterministic belief generation which just copies the inputs directly.
+
                             new_episode_penalties.extend([primary_belief_context["filtered_belief_generations_len"]-avg, secondary_belief_context["filtered_belief_generations_len"]-avg])
                         else:
                             new_episode_penalties.extend([0,0])
