@@ -117,7 +117,7 @@ python3 -m verl.trainer.main_ppo \
     env.non_terminal_penalty=1.0 \
     +env.vocab=$VOCAB \
     +env.max_attempts=$MAX_ATTEMPTS \
-    env.rollout.n=$group_size \
+    env.rollout.n=1 \
     trainer.belief_state_grading=$GRADE_BELIEF \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \

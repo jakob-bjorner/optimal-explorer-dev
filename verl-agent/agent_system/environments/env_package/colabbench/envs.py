@@ -137,9 +137,11 @@ class ColabBenchEnvs:
         self.reset_count = 0
         # Create Ray remote actors instead of processes
         self.workers = []
-        for _ in range(self.num_processes):
+        seeds = np.arange(env_num).repeat(group_n)
+        for i in range(self.num_processes):
+            seed_i = seeds[i]
             worker = ColabBenchWorker.remote(
-                seed, 
+                seed_i,
                 env_num, 
                 split, 
                 hostname, 
