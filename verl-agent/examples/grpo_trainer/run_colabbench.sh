@@ -91,7 +91,7 @@ python3 -m examples.data_preprocess.prepare \
 # DEBUG=MEM1GRPO64 train_data_size=64 IS_MEM1=True INSTRUCT=False bash examples/grpo_trainer/run_nqhotpotqa.sh
 
 # DEBUG=GRPO_INSTRUCT_G bash examples/grpo_trainer/run_colabbench.sh
-# SINGLE_CTX=True MULTI_MSG=False DEBUG=GRPO_INSTRUCT_G bash examples/grpo_trainer/run_colabbench.sh
+# SINGLE_CTX=True MULTI_MSG=False DEBUG=GRPO_INSTRUCT_G_VANILLA bash examples/grpo_trainer/run_colabbench.sh
 # DEBUG=GRPO_INSTRUCT IS_MEM1=True bash examples/grpo_trainer/run_colabbench.sh 
 # DEBUG=GRPO_INSTRUCT LENPEN=0.0002 bash examples/grpo_trainer/run_colabbench.sh
 # DEBUG=GRPO_INSTRUCT_G_BG GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh
