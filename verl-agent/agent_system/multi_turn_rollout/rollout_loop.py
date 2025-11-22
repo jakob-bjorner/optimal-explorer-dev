@@ -938,8 +938,10 @@ class TrajectoryCollector:
                             
                             if int(self.config.trainer.belief_state_grading_type) == 0:
                                 record_prob_for_parts=[0,1,0,1,0,1]
-                            else:
+                            elif int(self.config.trainer.belief_state_grading_type) == 1:
                                 record_prob_for_parts=[0,0,0,0,0,1] # lets ensure that this is properly triggered
+                            else:
+                                record_prob_for_parts=[0,0,0,1,0,1]
                             prompt_parts_tokenized = [self.tokenizer.encode(s) for s in prompt_parts]
                             input_ids_list.append(sum(prompt_parts_tokenized, []))
                             labels_list.append(sum([list(ids) if record else [-100] * len(ids) for record, ids in zip(record_prob_for_parts, prompt_parts_tokenized)], []))
