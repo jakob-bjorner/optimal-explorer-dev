@@ -928,7 +928,7 @@ class TrajectoryCollector:
                             true_prior_belief = extract("belief", c['input_ids_str'])
                             true_prior_action = extract("action", c['input_ids_str'])
                             prompt_parts=[
-                                COLABBENCH_BELIEF_GRADING_0_NO_LOSS.format(future_belief=c['filtered_belief_generations']),
+                                COLABBENCH_BELIEF_GRADING_0_NO_LOSS.format(future_belief=c['filtered_belief_generations'], first_user_query=c['info']['problem_description']),
                                 COLABBENCH_BELIEF_GRADING_1_LOSS.format(prior_belief=true_prior_belief), 
                                 COLABBENCH_BELIEF_GRADING_2_NO_LOSS, 
                                 COLABBENCH_BELIEF_GRADING_3_LOSS.format(prior_action=true_prior_action), 
