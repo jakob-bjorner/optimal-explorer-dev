@@ -67,8 +67,9 @@ class ColabBenchWorker:
     def step(self, action):
         """Execute a step in the environment"""
         tag, action, is_belief_generation_step = action
-        info = {"attempt": self.env.steps+1, "is_last_step": self.env.steps+1==self.max_steps, "steps_remaining": self.max_steps - self.env.steps - 1, "problem_description": self.task["problem_description"], "ground_truth": self.task["ground_truth"]}
+        info = {"attempt": self.env.steps+2, "is_last_step": self.env.steps+2==self.max_steps, "steps_remaining": self.max_steps - self.env.steps - 2, "problem_description": self.task["problem_description"], "ground_truth": self.task["ground_truth"]}
         if is_belief_generation_step:
+            info = {"attempt": self.env.steps+1, "is_last_step": self.env.steps+1==self.max_steps, "steps_remaining": self.max_steps - self.env.steps - 1, "problem_description": self.task["problem_description"], "ground_truth": self.task["ground_truth"]}
             # the belief generation step is checked only on the top level env manager. 
             # This is just a noop so other environments can step if they need to.
             return "", 0, False, info | {"won":self.has_won}
@@ -137,9 +138,11 @@ class ColabBenchEnvs:
         self.reset_count = 0
         # Create Ray remote actors instead of processes
         self.workers = []
-        for _ in range(self.num_processes):
+        seeds = np.arange(env_num).repeat(group_n)
+        for i in range(self.num_processes):
+            seed_i = seeds[i]
             worker = ColabBenchWorker.remote(
-                seed, 
+                seed_i,
                 env_num, 
                 split, 
                 hostname, 

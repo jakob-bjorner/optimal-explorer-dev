@@ -39,6 +39,11 @@ LENPEN=${LENPEN:-0}
 FORCE_FULL=${FORCE_FULL:-False}
 GRADE_BELIEF=${GRADE_BELIEF:-0.0}
 GRADE_BELIEF_TYPE=${GRADE_BELIEF_TYPE:-0}
+if [ -z "${CKPT+x}" ]; then
+    RESUME_PATH=null
+else
+    RESUME_PATH=checkpoints/verl_agent_alfworld/colabbench_grpo_${CKPT}
+fi
 # 0 corresponds to belief grading with full reconstruction, and 1 with reconstructing only observations.
 
 
@@ -90,8 +95,8 @@ python3 -m examples.data_preprocess.prepare \
 # DEBUG=MEM1GRPO32 IS_MEM1=True INSTRUCT=False bash examples/grpo_trainer/run_colabbench.sh
 # DEBUG=MEM1GRPO64 train_data_size=64 IS_MEM1=True INSTRUCT=False bash examples/grpo_trainer/run_nqhotpotqa.sh
 
-# DEBUG=GRPO_INSTRUCT_G bash examples/grpo_trainer/run_colabbench.sh
-# SINGLE_CTX=True MULTI_MSG=False DEBUG=GRPO_INSTRUCT_G bash examples/grpo_trainer/run_colabbench.sh
+# DEBUG=GRPO_INSTRUCT_G_ABBEL bash examples/grpo_trainer/run_colabbench.sh
+# SINGLE_CTX=True MULTI_MSG=False DEBUG=GRPO_INSTRUCT_G_VANILLA bash examples/grpo_trainer/run_colabbench.sh
 # DEBUG=GRPO_INSTRUCT IS_MEM1=True bash examples/grpo_trainer/run_colabbench.sh 
 # DEBUG=GRPO_INSTRUCT LENPEN=0.0002 bash examples/grpo_trainer/run_colabbench.sh
 # DEBUG=GRPO_INSTRUCT_G_BG GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh
@@ -99,7 +104,7 @@ python3 -m examples.data_preprocess.prepare \
 # DEBUG=GRPO_INSTRUCT_G_BG GRADE_BELIEF_TYPE=1 GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh
 # I launched the below changing the ceiling to -0.8.
 # DEBUG=GRPO_INSTRUCT_G_BG_LP_CEILn0_8 GRADE_BELIEF=1.0 LENPEN=0.01 bash examples/grpo_trainer/run_colabbench.sh
-
+# DEBUG=GRPO_INSTRUCT_G_ABBEL_RESUME_FROM_PROB_OBS_50 CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_1.0_1GRPO_INSTRUCT_G_BG_NOCRASHPLS/global_step_50" bash examples/grpo_trainer/run_colabbench.sh
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -165,8 +170,9 @@ python3 -m verl.trainer.main_ppo \
     trainer.project_name='verl_agent_alfworld' \
     trainer.experiment_name=colabbench_grpo_qwen2.5-7b-${MODEL_DESC}_16_seed${SEED}_sc_${SINGLE_CTX}_belief_promp_${MULTI_MSG}_is_mem1_${IS_MEM1}_belief_lp_${LENPEN}_bg_${GRADE_BELIEF}_${GRADE_BELIEF_TYPE}${DEBUG} \
     trainer.n_gpus_per_node=4 \
+    trainer.resume_from_path=$RESUME_PATH \
     trainer.nnodes=1 \
     trainer.save_freq=50 \
     trainer.test_freq=10000 \
-    trainer.total_epochs=200 \
+    trainer.total_epochs=100 \
     trainer.val_before_train=False $@

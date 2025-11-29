@@ -79,7 +79,7 @@ YOU SHOULD TRY TO ASK CLARIFICATION QUESTIONS. Put your questions within <ask> .
 4) Note that you can only interact with the human users WITHIN 10 back-and-forth rounds and you have to provide your final answer before the conversation ends.
 5) You should be as concise as possible in your response to human.
 6) Think step-by-step in think tags before you act. i.e <think> ... </think> <ask> ... </ask> or <think> ... </think> <code> ... </code>.</instruction>
-First user query: <query>Hey agent, can you write a Python function to help me add more body to my beer by adjusting the mash temperature? I'm not sure about the exact parameters, but I heard that mash temperature and thickness can affect the body of the beer.The signature of the function is: def calculate_mash_temperature(desired_body_level, original_gravity)</query>
+First user query: <query>{first_user_query}</query>
 Your new belief stateis : <belief>{future_belief}</belief>
 
 Your past belief state was: <belief>"""

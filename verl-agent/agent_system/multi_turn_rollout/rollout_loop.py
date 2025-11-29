@@ -928,7 +928,7 @@ class TrajectoryCollector:
                             true_prior_belief = extract("belief", c['input_ids_str'])
                             true_prior_action = extract("action", c['input_ids_str'])
                             prompt_parts=[
-                                COLABBENCH_BELIEF_GRADING_0_NO_LOSS.format(future_belief=c['filtered_belief_generations']),
+                                COLABBENCH_BELIEF_GRADING_0_NO_LOSS.format(future_belief=c['filtered_belief_generations'], first_user_query=c['info']['problem_description']),
                                 COLABBENCH_BELIEF_GRADING_1_LOSS.format(prior_belief=true_prior_belief), 
                                 COLABBENCH_BELIEF_GRADING_2_NO_LOSS, 
                                 COLABBENCH_BELIEF_GRADING_3_LOSS.format(prior_action=true_prior_action), 
@@ -938,8 +938,10 @@ class TrajectoryCollector:
                             
                             if int(self.config.trainer.belief_state_grading_type) == 0:
                                 record_prob_for_parts=[0,1,0,1,0,1]
-                            else:
+                            elif int(self.config.trainer.belief_state_grading_type) == 1:
                                 record_prob_for_parts=[0,0,0,0,0,1] # lets ensure that this is properly triggered
+                            else:
+                                record_prob_for_parts=[0,0,0,1,0,1]
                             prompt_parts_tokenized = [self.tokenizer.encode(s) for s in prompt_parts]
                             input_ids_list.append(sum(prompt_parts_tokenized, []))
                             labels_list.append(sum([list(ids) if record else [-100] * len(ids) for record, ids in zip(record_prob_for_parts, prompt_parts_tokenized)], []))
@@ -975,7 +977,8 @@ class TrajectoryCollector:
                     new_total_batch_list = copy(total_batch_list)
                     new_episode_rewards = episode_rewards.tolist()
                     new_episode_lengths = episode_lengths.tolist()
-                    new_episode_penalties = episode_penalties.tolist()
+                    # if you have penalties enabled for belief lengths, you shouldn't have them enabled for overall episode length. This encourages very short trajectories.
+                    new_episode_penalties = np.zeros_like(episode_penalties).tolist()
                     new_traj_uid = traj_uid.tolist()
                     i = 0
                     belief_states_graded_in_chain = 0
@@ -1000,8 +1003,13 @@ class TrajectoryCollector:
                             avg = (primary_belief_context["filtered_belief_generations_len"] + secondary_belief_context["filtered_belief_generations_len"]) / 2
                             if primary_belief_context["filtered_belief_generations_len"] == secondary_belief_context["filtered_belief_generations_len"]:
                                 avg = avg - 20 # we will penalize both a bit if they are equal? this to discourage a deterministic belief generation which just copies the inputs directly.
+                            # I only want to apply the penalty to things larger than 100, if the length degenerates to 0, I don't want this to be rewarded. This is very bad.
+                            # so if both are larger than 100, then I do this calculation, which will favor the shorter of the two.
+                            if primary_belief_context["filtered_belief_generations_len"] > 100 and secondary_belief_context["filtered_belief_generations_len"] > 100:
+                                new_episode_penalties.extend([primary_belief_context["filtered_belief_generations_len"]-avg, secondary_belief_context["filtered_belief_generations_len"]-avg])
+                            else: 
+                                new_episode_penalties.extend([0, 0])
 
-                            new_episode_penalties.extend([primary_belief_context["filtered_belief_generations_len"]-avg, secondary_belief_context["filtered_belief_generations_len"]-avg])
                         else:
                             new_episode_penalties.extend([0,0])
 

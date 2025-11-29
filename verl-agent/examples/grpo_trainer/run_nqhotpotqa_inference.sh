@@ -208,7 +208,7 @@ python3 -m verl.trainer.main_ppo \
     env.seed=$SEED \
     env.max_steps=$MAX_STEPS \
     env.non_terminal_penalty=0.0 \
-    env.rollout.n=$group_size \
+    env.rollout.n=1 \
     +env.force_full_step_len=$FORCE_FULL \
     +env.split=test \
     +env.num_objectives=$NUM_OBJECTIVES \
