@@ -83,7 +83,7 @@ python3 -m examples.data_preprocess.prepare \
 # critic.model.fsdp_config.optimizer_offload=True \
 
 ### launch training loop in the retrieval environment
-# before launching need to run 
+# before launching need to run
 # conda activate retriever
 # bash /nas/ucb/jbjorner3/dev/optimal-explorer-dev/MEM1/Mem1/train/retrieval_launch.sh
 # this will use gpus 4, and 5 for hosting the RAG endpoint to conduct search on.
@@ -103,7 +103,8 @@ python3 -m examples.data_preprocess.prepare \
 # peak token lengths experiment but you put a length penalty on the belief lengths.
 # DEBUG=GRPO_INSTRUCT LENPEN=0.0002 bash examples/grpo_trainer/run_nqhotpotqa.sh; DEBUG=GRPO_INSTRUCT LENPEN=0.01 bash examples/grpo_trainer/run_nqhotpotqa.sh; 
 # DEBUG=GRPO_INSTRUCT SINGLE_CTX=True MULTI_MSG=False bash examples/grpo_trainer/run_nqhotpotqa.sh
-
+# DEBUG=GRPO_INSTRUCT_SEED_2 SEED=2 LENPEN=0.01 bash examples/grpo_trainer/run_nqhotpotqa.sh;
+# DEBUG=GRPO_INSTRUCT_ABBEL_SEED_2 SEED=2 bash examples/grpo_trainer/run_nqhotpotqa.sh
 
 
 python3 -m verl.trainer.main_ppo \
@@ -169,6 +170,6 @@ python3 -m verl.trainer.main_ppo \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=100 \
-    trainer.test_freq=10000 \
+    trainer.test_freq=-1 \
     trainer.total_epochs=260 \
     trainer.val_before_train=False $@

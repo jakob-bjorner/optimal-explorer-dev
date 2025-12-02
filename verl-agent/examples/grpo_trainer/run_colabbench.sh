@@ -105,7 +105,7 @@ python3 -m examples.data_preprocess.prepare \
 # I launched the below changing the ceiling to -0.8.
 # DEBUG=GRPO_INSTRUCT_G_BG_LP_CEILn0_8 GRADE_BELIEF=1.0 LENPEN=0.01 bash examples/grpo_trainer/run_colabbench.sh
 # DEBUG=GRPO_INSTRUCT_G_ABBEL_RESUME_FROM_PROB_OBS_50 CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_1.0_1GRPO_INSTRUCT_G_BG_NOCRASHPLS/global_step_50" bash examples/grpo_trainer/run_colabbench.sh
-
+# DEBUG=GRPO_INSTRUCT_G_BG_LOG_PROB_OBS_2 SEED=2 GRADE_BELIEF_TYPE=1 GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/verl-agent/text/train.parquet \
@@ -173,6 +173,6 @@ python3 -m verl.trainer.main_ppo \
     trainer.resume_from_path=$RESUME_PATH \
     trainer.nnodes=1 \
     trainer.save_freq=50 \
-    trainer.test_freq=10000 \
+    trainer.test_freq=-1 \
     trainer.total_epochs=100 \
     trainer.val_before_train=False $@
