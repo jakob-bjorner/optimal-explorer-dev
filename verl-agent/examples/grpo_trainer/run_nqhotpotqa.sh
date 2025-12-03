@@ -14,6 +14,9 @@ fi
 
 MAX_STEPS=$(($MAX_ATTEMPTS * 2 - 1))
 if [ $SINGLE_CTX == True ]; then
+    if [ $MULTI_MSG == False ]; then
+        MAX_STEPS=$MAX_ATTEMPTS
+    fi
     MAX_PROMPT_LEN=16384
 else
     MAX_PROMPT_LEN=4096
@@ -151,7 +154,8 @@ python3 -m verl.trainer.main_ppo \
     env.max_steps=$MAX_STEPS \
     env.non_terminal_penalty=0.0 \
     env.rollout.n=$group_size \
-    env.belief_length_penalty=$LENPEN \
+    env.belief_length_penalty=0.0 \
+    trainer.post_normalization_length_penalty=$LENPEN \
     +env.force_full_step_len=$FORCE_FULL \
     +env.split=train \
     +env.num_objectives=2 \
@@ -162,10 +166,10 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_agent_alfworld' \
-    trainer.experiment_name=nqhotpotqa_grpo_qwen2.5-7b-${MODEL_DESC}_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}_is_mem1_${IS_MEM1}_belief_len_pen_${LENPEN}${DEBUG} \
+    trainer.experiment_name=nqhotpotqa_grpo_qwen2.5-7b-${MODEL_DESC}_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}_is_mem1_${IS_MEM1}_belief_len_pen_${LENPEN}${DEBUG}_nqbranch \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
-    trainer.save_freq=20 \
-    trainer.test_freq=10000 \
-    trainer.total_epochs=400 \
+    trainer.save_freq=100 \
+    trainer.test_freq=-1 \
+    trainer.total_epochs=260 \
     trainer.val_before_train=False $@

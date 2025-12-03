@@ -151,7 +151,7 @@ python3 -m examples.data_preprocess.prepare \
 
 
 
-
+ADDITIONAL_STEPS=${ADDITIONAL_STEPS:-14}
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -215,10 +215,10 @@ python3 -m verl.trainer.main_ppo \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
-    trainer.test_freq=5 \
-    trainer.total_epochs=500 \
+    trainer.test_freq=-1 \
+    trainer.total_epochs=$(($ADDITIONAL_STEPS + 260)) \
     trainer.only_gen_once=True \
-    trainer.resume_from_path=/nas/ucb/jbjorner3/dev/optimal-explorer-dev/verl-agent/checkpoints/verl_agent_alfworld/nqhotpotqa_grpo_${CKPT} \
+    trainer.resume_from_path=checkpoints/verl_agent_alfworld/nqhotpotqa_grpo_${CKPT} \
     trainer.val_before_train=False $@
 # /nas/ucb/jbjorner3/dev/optimal-explorer-dev/verl-agent/checkpoints/verl_agent_alfworld/nqhotpotqa_grpo_
 # /nas/ucb/dayan/optimal-explorer-dev/verl-agent/checkpoints/verl_agent_alfworld/nqhotpotqa_grpo_qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0.0GRPO_INSTRUCT/global_step_260

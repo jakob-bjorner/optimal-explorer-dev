@@ -262,6 +262,7 @@ algorithm:
     max_num_gen_batches: 10
 
 trainer:
+  post_normalization_length_penalty: 0.0
   belief_state_grading: 0.0
   only_gen_once: False
   balance_batch: True

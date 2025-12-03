@@ -75,10 +75,12 @@ class NQHotpotQAWorker:
         self.attempt = 0
         if self.split == 'test':
             self.index_ordering = (seed + num_envs * np.arange(len(self.ds))) % len(self.ds)
+            permutation_inderection = np.random.default_rng(42).permutation(len(self.ds)) # make the order in which we do eval random.
+            self.index_ordering = permutation_inderection[self.index_ordering]
         else:
             self.index_ordering = np.random.default_rng(seed).permutation(len(self.ds))
         # self.env.reset(seed)
-        self.index = -1
+        self.index = -1 #if self.split == "test" else 200
         self.has_won = False
     
     def step(self, action):

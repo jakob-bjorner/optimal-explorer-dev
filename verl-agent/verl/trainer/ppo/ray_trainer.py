@@ -1229,6 +1229,12 @@ class RayPPOTrainer:
                     # creating outputs for reading the trajectories.
 
                     # update critic
+                    if self.config.trainer.post_normalization_length_penalty:
+                        # this is a very particular (dumb) foot gun, made only so we don't have to rerun some expensive experiments.
+                        # it says, that you know what you are doing.
+                        # should only be used without belief state grading, and within the natural questions dataset.
+                        # breakpoint()
+                        batch.batch['advantages'] -= torch.tensor(np.array(batch.non_tensor_batch['episode_penalties'].tolist()), dtype=batch.batch['advantages'].dtype, device=batch.batch['advantages'].device)[:,None] * self.config.trainer.post_normalization_length_penalty * batch.batch['response_mask']
                     if self.config.trainer.belief_state_grading:
                         belief_state_grading_mask = [info.get('is_belief_grading_context', False) for idx, info in enumerate(batch.non_tensor_batch["info"])]
                         batch.batch['returns'][belief_state_grading_mask] *= self.config.trainer.belief_state_grading
