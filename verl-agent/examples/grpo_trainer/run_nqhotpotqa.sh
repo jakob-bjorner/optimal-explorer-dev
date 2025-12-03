@@ -15,6 +15,9 @@ fi
 
 MAX_STEPS=$(($MAX_ATTEMPTS * 2 - 1))
 if [ $SINGLE_CTX == True ]; then
+    if [ $MULTI_MSG == False]; then
+        MAX_STEPS=$MAX_ATTEMPTS
+    fi
     MAX_PROMPT_LEN=16384
 else
     MAX_PROMPT_LEN=4096
@@ -43,11 +46,12 @@ LENPEN=${LENPEN:-0}
 FORCE_FULL=${FORCE_FULL:-False}
 
 
-
+# next time move all the logic out of the config, needs to replicated, and very messy. No bash scripting.
 # invalid_action_penalty_coef=0.0
 # also their kl is 0.01 lol.
 # Need to change the max_prompt_len hyper param for real run. ahh its probably ok actually.
 # max steps is low for testing
+
 
 # We only use data preparation to indicate the modality and the data size.
 # python3 -m examples.data_preprocess.prepare \
