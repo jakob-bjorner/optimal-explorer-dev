@@ -75,6 +75,8 @@ class NQHotpotQAWorker:
         self.attempt = 0
         if self.split == 'test':
             self.index_ordering = (seed + num_envs * np.arange(len(self.ds))) % len(self.ds)
+            permutation_inderection = np.random.default_rng(42).permutation(len(self.ds)) # make the order in which we do eval random.
+            self.index_ordering = permutation_inderection[self.index_ordering]
         else:
             self.index_ordering = np.random.default_rng(seed).permutation(len(self.ds))
         # self.env.reset(seed)
@@ -89,7 +91,7 @@ class NQHotpotQAWorker:
             # the belief generation step is checked only on the top level env manager. 
             # This is just a noop so other environments can step if they need to.
             return "", 0, False, info |{"won": self.has_won}
-        if self.attempt >= self.max_attempts:
+        if self.attempt+1 >= self.max_attempts:
             return "", 0, True, info | {"won": self.has_won}
         # obs, _, done, info = self.env.step(action)
         # str_response_in_tool_call = ""

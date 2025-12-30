@@ -1340,7 +1340,7 @@ class RayPPOTrainer:
                     # if "info" in batch.non_tensor_batch: Commented out for seeing if removing the ndarray fixed the json write issue.
                     #     [info.pop("is_action_valid") if "is_action_valid" in info else None for info in batch.non_tensor_batch["info"]]
                     #     # batch.non_tensor_batch["info"] = 
-                    fout.write(json.dumps(batch.non_tensor_batch, indent="  ") + "\n")
+                    fout.write(json.dumps(batch.non_tensor_batch) + "\n")
                 print(time.time() - start_time)
                 if self.config.trainer.only_gen_once and self.envs.envs.get_epochs() >= 1:
                     return
