@@ -18,6 +18,8 @@ val_data_size=8
 group_size=2
 B=${B:-7}
 GRADE_BELIEF=${GRADE_BELIEF:-0.0}
+
+
 # invalid_action_penalty_coef=0.0
 # also their kl is 0.01 lol.
 # Need to change the max_prompt_len hyper param for real run. ahh its probably ok actually.
@@ -60,7 +62,8 @@ python3 -m examples.data_preprocess.prepare \
 # have we even trained something in this environment? What do we have going in this setting?
 # lets do a 3 b model for testing, and have belief states generated. 
 # B=3 train_data_size=4 GRADE_BELIEF=1.0 DEBUG=combolock_vs_r1_test bash examples/grpo_trainer/run_combolock.sh
-# B=7 train_data_size=16 GRADE_BELIEF=2.0 DEBUG=combolock_vs_r1_new_parse4 bash examples/grpo_trainer/run_combolock.sh
+# B=7 train_data_size=16 SEED=3 GRADE_BELIEF=2.0 DEBUG=combolock_vs_r1_new_parse5 bash examples/grpo_trainer/run_combolock.sh
+# B=7 train_data_size=16 SEED=3 SINGLE_CTX=True MULTI_MSG=False DEBUG=combolock_vanilla bash examples/grpo_trainer/run_combolock.sh; B=7 train_data_size=16 SEED=3 SINGLE_CTX=True MULTI_MSG=True DEBUG=combolock_belief_prompting bash examples/grpo_trainer/run_combolock.sh
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -119,5 +122,5 @@ python3 -m verl.trainer.main_ppo \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
     trainer.test_freq=10000 \
-    trainer.total_epochs=400 \
+    trainer.total_epochs=140 \
     trainer.val_before_train=False $@

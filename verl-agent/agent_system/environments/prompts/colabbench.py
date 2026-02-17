@@ -11,7 +11,7 @@ by asking questions to the human user about some hidden information and implicit
 YOU SHOULD TRY TO ASK CLARIFICATION QUESTIONS. Put your questions within <ask> ... </ask>.
 2) Note that you should not ask human users complicated questions as they will only answer questions briefly in two sentences.
 3) When you have gathered enough information to answer, put your final python code within <code> ... </code>.
-4) Note that you can only interact with the human users WITHIN 10 back-and-forth rounds and you have to provide your final answer before the conversation ends.
+4) Note that you can only interact with the human users WITHIN {max_attempts} back-and-forth rounds and you have to provide your final answer before the conversation ends.
 5) You should be as concise as possible in your response to human.
 6) Think step-by-step in think tags before you act. i.e <think> ... </think> <ask> ... </ask> or <think> ... </think> <code> ... </code>."""
 

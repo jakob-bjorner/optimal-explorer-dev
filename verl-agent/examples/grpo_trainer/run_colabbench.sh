@@ -39,6 +39,8 @@ LENPEN=${LENPEN:-0}
 FORCE_FULL=${FORCE_FULL:-False}
 GRADE_BELIEF=${GRADE_BELIEF:-0.0}
 GRADE_BELIEF_TYPE=${GRADE_BELIEF_TYPE:-0}
+BG_CEIL_RWD=${BG_CEIL_RWD:--0.8}
+FULL_HIST_BELIEF=${FULL_HIST_BELIEF:-False}
 if [ -z "${CKPT+x}" ]; then
     RESUME_PATH=null
 else
@@ -96,7 +98,7 @@ python3 -m examples.data_preprocess.prepare \
 # DEBUG=MEM1GRPO64 train_data_size=64 IS_MEM1=True INSTRUCT=False bash examples/grpo_trainer/run_nqhotpotqa.sh
 
 # DEBUG=GRPO_INSTRUCT_G_ABBEL bash examples/grpo_trainer/run_colabbench.sh
-# SINGLE_CTX=True MULTI_MSG=False DEBUG=GRPO_INSTRUCT_G_VANILLA bash examples/grpo_trainer/run_colabbench.sh
+# DEBUG=GRPO_INSTRUCT_G_VANILLA SINGLE_CTX=True MULTI_MSG=False bash examples/grpo_trainer/run_colabbench.sh
 # DEBUG=GRPO_INSTRUCT IS_MEM1=True bash examples/grpo_trainer/run_colabbench.sh 
 # DEBUG=GRPO_INSTRUCT LENPEN=0.0002 bash examples/grpo_trainer/run_colabbench.sh
 # DEBUG=GRPO_INSTRUCT_G_BG GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh
@@ -106,6 +108,34 @@ python3 -m examples.data_preprocess.prepare \
 # DEBUG=GRPO_INSTRUCT_G_BG_LP_CEILn0_8 GRADE_BELIEF=1.0 LENPEN=0.01 bash examples/grpo_trainer/run_colabbench.sh
 # DEBUG=GRPO_INSTRUCT_G_ABBEL_RESUME_FROM_PROB_OBS_50 CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_1.0_1GRPO_INSTRUCT_G_BG_NOCRASHPLS/global_step_50" bash examples/grpo_trainer/run_colabbench.sh
 # DEBUG=GRPO_INSTRUCT_G_BG_LOG_PROB_OBS_2 SEED=2 GRADE_BELIEF_TYPE=1 GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh
+
+# DEBUG=GRPO_INSTRUCT_G_BG_2048_MAX_ATT_3 MAX_ATTEMPTS=3 MAX_PROMPT_LEN=5186 MAX_RES_LENGTH=2048 GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh
+# DEBUG=GRPO_INSTRUCT_G_VANILLA_MAX_ATT_3 SINGLE_CTX=True MULTI_MSG=False MAX_ATTEMPTS=3 bash examples/grpo_trainer/run_colabbench.sh
+# DEBUG=GRPO_INSTRUCT_G_BG_2048_MAX_ATT_3_LP LENPEN=0.01 MAX_ATTEMPTS=3 MAX_PROMPT_LEN=5186 MAX_RES_LENGTH=2048 GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh; DEBUG=GRPO_INSTRUCT_G_BG_MAX_ATT_3 MAX_ATTEMPTS=3 bash examples/grpo_trainer/run_colabbench.sh
+# doubling batch size, and adding two to number of steps because vanilla isn't learning to ask more questions.
+# DEBUG=GRPO_INSTRUCT_G_VANILLA_MAX_ATT_5 SINGLE_CTX=True MULTI_MSG=False MAX_ATTEMPTS=5 train_data_size=32 bash examples/grpo_trainer/run_colabbench.sh; DEBUG=GRPO_INSTRUCT_G_BG_2048_MAX_ATT_5 MAX_ATTEMPTS=5 train_data_size=32 MAX_PROMPT_LEN=5186 MAX_RES_LENGTH=2048 GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh; DEBUG=GRPO_INSTRUCT_G_BG_2048_MAX_ATT_5_LP LENPEN=0.01 MAX_ATTEMPTS=5 train_data_size=32 MAX_PROMPT_LEN=5186 MAX_RES_LENGTH=2048 GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh; DEBUG=GRPO_INSTRUCT_G_BG_MAX_ATT_5 MAX_ATTEMPTS=5 train_data_size=32 bash examples/grpo_trainer/run_colabbench.sh
+# DEBUG=GRPO_INSTRUCT_G_BG_200_LP LENPEN=0.01 GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh; 
+# CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0.01_bg_1.0_0GRPO_INSTRUCT_G_BG_200_LP/global_step_50" DEBUG=GRPO_INSTRUCT_G_BG_200_LP STEP_RESUME=50 INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0.01_bg_1.0_0GRPO_INSTRUCT_G_BG_200_LP/global_step_100" DEBUG=GRPO_INSTRUCT_G_BG_200_LP STEP_RESUME=100 INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
+# DEBUG=GRPO_INSTRUCT_G_VANILLA_2 SINGLE_CTX=True MULTI_MSG=False SEED=2 bash examples/grpo_trainer/run_colabbench.sh
+# CKPT="qwen2.5-7b-instruct_16_seed2_sc_True_belief_promp_False_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_VANILLA_2/global_step_50" DEBUG=REDO STEP_RESUME=50 SINGLE_CTX=True MULTI_MSG=False IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed2_sc_True_belief_promp_False_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_VANILLA_2/global_step_100" DEBUG=REDO STEP_RESUME=100 SINGLE_CTX=True MULTI_MSG=False IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; 
+# DEBUG=GRPO_INSTRUCT_G_BG_400_LP LENPEN=0.01 GRADE_BELIEF=0.1 bash examples/grpo_trainer/run_colabbench.sh
+# CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0.01_bg_0.1_0GRPO_INSTRUCT_G_BG_400_LP/global_step_50" DEBUG=GRPO_INSTRUCT_G_BG_400_LP STEP_RESUME=50 INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0.01_bg_0.1_0GRPO_INSTRUCT_G_BG_400_LP/global_step_100" DEBUG=GRPO_INSTRUCT_G_BG_400_LP STEP_RESUME=100 INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
+# DEBUG=GRPO_INSTRUCT_G_BG_400_LP_2 SEED=2 LENPEN=0.01 GRADE_BELIEF=0.5 bash examples/grpo_trainer/run_colabbench.sh; 
+# colabbench_grpo_qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0.01_bg_0.5_0GRPO_INSTRUCT_G_BG_400_LP_2
+# CKPT="qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0.01_bg_0.5_0GRPO_INSTRUCT_G_BG_400_LP_2/global_step_50" DEBUG=GRPO_INSTRUCT_G_BG_400_LP_2 STEP_RESUME=50 INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0.01_bg_0.5_0GRPO_INSTRUCT_G_BG_400_LP_2/global_step_100" DEBUG=GRPO_INSTRUCT_G_BG_400_LP_2 STEP_RESUME=100 INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
+# DEBUG=GRPO_INSTRUCT_G_VANILLA_1 SINGLE_CTX=True MULTI_MSG=False SEED=1 bash examples/grpo_trainer/run_colabbench.sh
+# DEBUG=GRPO_INSTRUCT_G_VANILLA_3 SINGLE_CTX=True MULTI_MSG=False SEED=3 bash examples/grpo_trainer/run_colabbench.sh; CKPT="qwen2.5-7b-instruct_16_seed3_sc_True_belief_promp_False_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_VANILLA_3/global_step_50" STEP_RESUME=50 SINGLE_CTX=True MULTI_MSG=False IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed3_sc_True_belief_promp_False_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_VANILLA_3/global_step_100" STEP_RESUME=100 SINGLE_CTX=True MULTI_MSG=False IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
+# we want to launch new seeds of the runs.
+# DEBUG=GRPO_INSTRUCT_G_ABBEL_1 SEED=1 bash examples/grpo_trainer/run_colabbench.sh; DEBUG=GRPO_INSTRUCT_G_ABBEL_1 CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_ABBEL_1/global_step_50" STEP_RESUME=50 IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; DEBUG=GRPO_INSTRUCT_G_ABBEL_1 CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_ABBEL_1/global_step_100" STEP_RESUME=100 IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
+# FULL_HIST_BELIEF=True DEBUG=GRPO_INSTRUCT_G_FC_BG_PROXY bash examples/grpo_trainer/run_colabbench.sh
+# CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_FC_BG_PROXY_THINK/global_step_100" MAX_PROMPT_LEN=5186 MAX_RES_LENGTH=2048 STEP_RESUME=100 FULL_HIST_BELIEF=True DEBUG=GRPO_INSTRUCT_G_FC_BG_PROXY_THINK INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; FULL_HIST_BELIEF=True DEBUG=GRPO_INSTRUCT_G_FC_BG_PROXY_THINK SEED=2 MAX_PROMPT_LEN=5186 MAX_RES_LENGTH=2048 bash examples/grpo_trainer/run_colabbench.sh; CKPT="qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_FC_BG_PROXY_THINK/global_step_50" MAX_PROMPT_LEN=5186 MAX_RES_LENGTH=2048 STEP_RESUME=50 FULL_HIST_BELIEF=True DEBUG=GRPO_INSTRUCT_G_FC_BG_PROXY_THINK INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_FC_BG_PROXY_THINK/global_step_100" MAX_PROMPT_LEN=5186 MAX_RES_LENGTH=2048 STEP_RESUME=100 FULL_HIST_BELIEF=True DEBUG=GRPO_INSTRUCT_G_FC_BG_PROXY_THINK INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
+# DEBUG=GRPO_INSTRUCT_G_BG_SSR_debug_3 GRADE_BELIEF_TYPE=-1 MAX_ATTEMPTS=3 GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh
+# SSR = single step reward
+# qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_1.0_-1GRPO_INSTRUCT_G_BG_SSR
+# DEBUG=GRPO_INSTRUCT_G_BG_SSR GRADE_BELIEF_TYPE=-1 SEED=2 GRADE_BELIEF=1.0 bash examples/grpo_trainer/run_colabbench.sh; CKPT="qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_1.0_-1GRPO_INSTRUCT_G_BG_SSR/global_step_50" STEP_RESUME=50 DEBUG=GRPO_INSTRUCT_G_BG_SSR INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_1.0_-1GRPO_INSTRUCT_G_BG_SSR/global_step_100" STEP_RESUME=100 DEBUG=GRPO_INSTRUCT_G_BG_SSR INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
+# DEBUG=GRPO_INSTRUCT_G_ABBEL_FR_1 SEED=1 bash examples/grpo_trainer/run_colabbench.sh; CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_ABBEL_FR_1/global_step_50" STEP_RESUME=50 DEBUG=GRPO_INSTRUCT_G_ABBEL_FR_1 INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_ABBEL_FR_1/global_step_100" STEP_RESUME=100 DEBUG=GRPO_INSTRUCT_G_ABBEL_FR_1 INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
+# DEBUG=GRPO_INSTRUCT_G_ABBEL_FR_2 SEED=2 bash examples/grpo_trainer/run_colabbench.sh; CKPT="qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_ABBEL_FR_2/global_step_50" STEP_RESUME=50 DEBUG=GRPO_INSTRUCT_G_ABBEL_FR_2 INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_ABBEL_FR_2/global_step_100" STEP_RESUME=100 DEBUG=GRPO_INSTRUCT_G_ABBEL_FR_2 INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
+
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/verl-agent/text/train.parquet \
@@ -156,6 +186,7 @@ python3 -m verl.trainer.main_ppo \
     env.rollout.n=$group_size \
     env.belief_length_penalty=0.0 \
     +env.split=train \
+    +env.full_history_belief=$FULL_HIST_BELIEF \
     +env.is_mem1=$IS_MEM1 \
     +env.hostname=$HOSTNAME \
     +env.port=8000 \
@@ -166,7 +197,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     +trainer.belief_state_grading_type=$GRADE_BELIEF_TYPE \
-    +trainer.ceiling_belief_grading_reward=-0.8 \
+    +trainer.ceiling_belief_grading_reward=$BG_CEIL_RWD \
     trainer.project_name='verl_agent_alfworld' \
     trainer.experiment_name=colabbench_grpo_qwen2.5-7b-${MODEL_DESC}_16_seed${SEED}_sc_${SINGLE_CTX}_belief_promp_${MULTI_MSG}_is_mem1_${IS_MEM1}_belief_lp_${LENPEN}_bg_${GRADE_BELIEF}_${GRADE_BELIEF_TYPE}${DEBUG} \
     trainer.n_gpus_per_node=4 \

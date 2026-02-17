@@ -91,7 +91,7 @@ class NQHotpotQAWorker:
             # the belief generation step is checked only on the top level env manager. 
             # This is just a noop so other environments can step if they need to.
             return "", 0, False, info |{"won": self.has_won}
-        if self.attempt+1 >= self.max_attempts:
+        if self.attempt >= self.max_attempts:
             return "", 0, True, info | {"won": self.has_won}
         # obs, _, done, info = self.env.step(action)
         # str_response_in_tool_call = ""

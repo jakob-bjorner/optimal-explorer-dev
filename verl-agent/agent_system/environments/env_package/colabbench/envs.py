@@ -66,7 +66,16 @@ class ColabBenchWorker:
     
     def step(self, action):
         """Execute a step in the environment"""
-        tag, action, is_belief_generation_step = action
+        # breakpoint()
+        tag, action, is_belief_generation_step, just_code = action
+        if just_code:
+            if is_belief_generation_step: 
+                # if this is true, then the model failed to generate a valid parsable code segment.
+                # the tag should be code, but may not be, but this should just result in poor reward, and not an exception.
+                reward = 0
+            else:
+                reward = check_correctness(self.task['ground_truth'], action, self.task['test_cases'])
+            return "Nothing", reward, True, {} # don't plan for info to be used in this just_code case.
         info = {"attempt": self.env.steps+2, "is_last_step": self.env.steps+2==self.max_steps, "steps_remaining": self.max_steps - self.env.steps - 2, "problem_description": self.task["problem_description"], "ground_truth": self.task["ground_truth"]}
         if is_belief_generation_step:
             info = {"attempt": self.env.steps+1, "is_last_step": self.env.steps+1==self.max_steps, "steps_remaining": self.max_steps - self.env.steps - 1, "problem_description": self.task["problem_description"], "ground_truth": self.task["ground_truth"]}
@@ -78,7 +87,6 @@ class ColabBenchWorker:
         # obs, _, done, info = self.env.step(action)
         if tag == "code":
             action = "I WANT TO ANSWER:" + action
-
         dialog_history, _, done = self.env.step(action)
         if dialog_history is not None:
             env_response = dialog_history[-1]['content']

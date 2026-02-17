@@ -906,8 +906,16 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
                                                {'role': 'user', 'content': text_obs[i]}]
                         postprocess_text_obs.append(new_action_messages)
                     else:
+
                         if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
                             env_response = text_obs[i]
+                            # for the single_context withoutout belief messages (ie Vanilla setting), we modify the environment response, such that it's hint is consistent with ABBEL's hint formatting not MEM1's.
+                            
+                            if "<hint>" in env_response and "</hint>" in env_response:
+                                env_response = env_response.split("<hint>")[0] + env_response.split("</hint>")[1]
+                                # this hint is on a different step because we give it during when ABBEL has its belief generation step.
+                                hint = "It is your last step." if infos[i]['steps_remaining'] == 1 else f"You have {infos[i]['steps_remaining'] - 1} steps remaining."
+                                env_response += "\nRemember if it is your last step you must answer. " + hint
                             new_action_messages = [{'role': "user", 'content': env_response}]
                             postprocess_text_obs.append(new_action_messages)
                         else:
@@ -984,7 +992,7 @@ class ColabBenchEnvironmentManager(EnvironmentManagerBase):
         # where I can change belief or not depending on if a valid action is passed in either case.
         tags, action_or_belief_texts, valids = self.projection_f(text_actions, self.action_or_belief)
         skip_sampling_mdp = self.action_or_belief | ~np.array(valids, dtype=bool) | is_not_processing
-        actions = list(zip(tags, action_or_belief_texts, skip_sampling_mdp))
+        actions = list(zip(tags, action_or_belief_texts, skip_sampling_mdp, skip_sampling_mdp*False))
         text_obs, rewards, dones, infos = self.envs.step(actions) 
         dones = np.logical_or(dones, np.logical_not(valids)) # we inheret the if invalid just terminate logic, and this helped us a lot.
         
@@ -1000,6 +1008,9 @@ class ColabBenchEnvironmentManager(EnvironmentManagerBase):
         new_action_or_belief = ~(self.action_or_belief & np.array(valids, dtype=np.bool)) # you go to belief state unless you generate a valid belief while in belief state.
         if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
             new_action_or_belief = self.action_or_belief * 0
+        if self.config.env.full_history_belief:
+            new_action_or_belief = self.action_or_belief * 0
+            # and we populate the belief for a new action prompt with the ground truth belief of our choice. this is done in the build_chat_obs
         if self.config.env.is_mem1:
             new_action_or_belief = self.action_or_belief * 0 # we handle the logic for mem1 with only actions even though we want beliefs to be generated as well.
             # if invalid in mem1, it just terminates.
@@ -1037,7 +1048,7 @@ class ColabBenchEnvironmentManager(EnvironmentManagerBase):
                 #     # need to add the generation template manually, because it was done wrong in MEM1.
                 # else:
                 
-                postprocess_text_obs.append([{'role': "system", 'content': COLABBENCH_AGENT_FIRST_MESSAGE},
+                postprocess_text_obs.append([{'role': "system", 'content': COLABBENCH_AGENT_FIRST_MESSAGE.format(max_attempts=self.config.env.max_attempts)},
                                             {'role': "user", 'content': self.task_desciptions[i]}])
             else:
                 # list of 0 or 1 indicating action or belief being generated.
@@ -1075,7 +1086,7 @@ class ColabBenchEnvironmentManager(EnvironmentManagerBase):
                             agent_action = "invalid action"
                             env_response = COLABBENCH_ENV_RESPONSE
 
-                        agent_first_message = COLABBENCH_AGENT_FIRST_MESSAGE
+                        agent_first_message = COLABBENCH_AGENT_FIRST_MESSAGE.format(max_attempts=self.config.env.max_attempts)
                         new_belief_messages = [{'role': "user", 'content': COLABBENCH_BELIEF_PROMPT.format(agent_first_message=agent_first_message,
                                                                                                            first_user_query=self.task_desciptions[i],
                                                                                                            belief_state=prior_belief,
@@ -1100,7 +1111,24 @@ class ColabBenchEnvironmentManager(EnvironmentManagerBase):
                     #                            {'role': 'user', 'content': text_obs[i]}]
                     #     postprocess_text_obs.append(new_action_messages)
                     # else:
-                    if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
+                    if self.config.env.full_history_belief:
+                        env_response = text_obs[i]
+                        if len(self.memory) == 1:
+                            prior_belief = COLABBENCH_NO_PRIOR_BELIEF_MESSAGE
+                        else:
+                            prior_belief = self.prior_beliefs[i]
+                        # from when I only wanted the action saved in the history
+                        # action = actions_or_beliefs[i]
+                        # belief = prior_belief + "\n<ask>" + action.strip() + "</ask>\n<environment>" + env_response.strip() + "</environment>"
+                        # to now having the thinking also saved along with the action
+                        action = full_text_actions[i]
+                        belief = prior_belief + "\n" + action.strip() + "\n<environment>" + env_response.strip() + "</environment>"
+                        agent_first_message = COLABBENCH_AGENT_FIRST_MESSAGE.format(max_attempts=self.config.env.max_attempts)
+                        hint = "It is your last step." if infos[i]['is_last_step'] else f"You have {infos[i]['steps_remaining']} steps remaining."
+                        new_action_messages = [{'role':'user', 'content': COLABBENCH_ACTION_PROMPT.format(agent_first_message=agent_first_message, first_user_query=self.task_desciptions[i], belief_state=belief, hint=hint)}]
+                        self.prior_beliefs[i] = belief
+                        postprocess_text_obs.append(new_action_messages)
+                    elif self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
                         env_response = text_obs[i]
                         hint = "It is your last step." if infos[i]['is_last_step'] else f"You have {infos[i]['steps_remaining']} steps remaining."
                         new_action_messages = [{'role': "user", 'content': env_response + "\n" + COLABBENCH_TURNS_REMAINING_HINT.format(hint=hint).strip()}]
@@ -1111,7 +1139,7 @@ class ColabBenchEnvironmentManager(EnvironmentManagerBase):
                         belief = actions_or_beliefs[i]
                         self.prior_beliefs[i] = belief
                         self.prior_belief_messages[i] = None
-                        agent_first_message = COLABBENCH_AGENT_FIRST_MESSAGE
+                        agent_first_message = COLABBENCH_AGENT_FIRST_MESSAGE.format(max_attempts=self.config.env.max_attempts)
                         hint = "It is your last step." if infos[i]['is_last_step'] else f"You have {infos[i]['steps_remaining']} steps remaining."
                         new_action_messages = [{'role':'user', 'content': COLABBENCH_ACTION_PROMPT.format(agent_first_message=agent_first_message, first_user_query=self.task_desciptions[i], belief_state=belief, hint=hint)}]
                         if self.config.actor_rollout_ref.rollout.single_context:

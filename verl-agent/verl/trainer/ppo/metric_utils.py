@@ -174,8 +174,10 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
             batch.non_tensor_batch["episode_rewards_max"][0].item(),
         "episode/reward/min": 
             batch.non_tensor_batch["episode_rewards_min"][0].item(),
-        "belief_episode/reward/mean": 
+        "belief_episode/reward/mean":
             batch.non_tensor_batch["belief_episode_rewards_mean"][0].item(),
+        "belief_episode/length/mean":
+            batch.non_tensor_batch["belief_episode_length_mean"][0].item(),
         "episode/length/mean": 
             batch.non_tensor_batch["episode_lengths_mean"][0].item(),
         "episode/length/max":
