@@ -95,7 +95,7 @@ echo "export PATH=$PATH:~/bin" >> ~/.bashrc
 source ~/.bashrc
 geckodriver --version
 
-activate verl-agent environment
+conda activate verl-agent
 cd sweet_rl
 uv pip install -e .
 // may need to use hf download instead.
