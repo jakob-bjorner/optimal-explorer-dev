@@ -80,7 +80,7 @@ YOU SHOULD TRY TO ASK CLARIFICATION QUESTIONS. Put your questions within <ask> .
 5) You should be as concise as possible in your response to human.
 6) Think step-by-step in think tags before you act. i.e <think> ... </think> <ask> ... </ask> or <think> ... </think> <code> ... </code>.</instruction>
 First user query: <query>{first_user_query}</query>
-Your new belief stateis : <belief>{future_belief}</belief>
+Your new belief state is: <belief>{future_belief}</belief>
 
 Your past belief state was: <belief>"""
 
@@ -98,4 +98,22 @@ COLABBENCH_BELIEF_GRADING_4_NO_LOSS = """
 Your past environment feedback: <environment>"""
 COLABBENCH_BELIEF_GRADING_5_LOSS = """{prior_obs}</environment>
 
+"""
+
+COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_0_NO_LOSS = """Global Instruction: <instruction>You are a helpful LLM agent. 
+Your task is to help a human user to resolve their problem, in particular python programming.
+1) Note that the problem is highly personalized so you need to explicitly gather information 
+by asking questions to the human user about some hidden information and implicit constraints.
+YOU SHOULD TRY TO ASK CLARIFICATION QUESTIONS. Put your questions within <ask> ... </ask>.
+2) Note that you should not ask human users complicated questions as they will only answer questions briefly in two sentences.
+3) When you have gathered enough information to answer, put your final python code within <code> ... </code>.
+4) Note that you can only interact with the human users WITHIN 10 back-and-forth rounds and you have to provide your final answer before the conversation ends.
+5) You should be as concise as possible in your response to human.
+6) Think step-by-step in think tags before you act. i.e <think> ... </think> <ask> ... </ask> or <think> ... </think> <code> ... </code>.</instruction>
+First user query: <query>{first_user_query}</query>
+Current belief: <belief>{belief_state}</belief>
+Correct Solution: <code>
+"""
+COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_1_LOSS = """{code}
+</code>
 """
