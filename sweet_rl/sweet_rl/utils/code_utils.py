@@ -109,6 +109,7 @@ def check_correctness(ground_truth_function, test_function, test_cases):
         ground_truth_output = get_function_output(ground_truth_function, test_case)
 
         # timeout precautions
+        test_output = None
         try:
             try:
                 signal.signal(signal.SIGALRM, timeout_handler)
@@ -119,7 +120,7 @@ def check_correctness(ground_truth_function, test_function, test_cases):
                 test_output = get_function_output(test_function, test_case)
                 signal.alarm(0)  # Reset the alarm
             except TimeoutError:
-                test_output = None
+                pass
         except:
             print("some other exception")
         try:

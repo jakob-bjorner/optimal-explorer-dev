@@ -923,7 +923,7 @@ class TrajectoryCollector:
                         # I'll focus on the first two belief grading options up
                         # breakpoint()
                         # need to generate the grade for all beliefs
-                        from agent_system.environments.prompts.colabbench import COLABBENCH_BELIEF_GRADING_0_NO_LOSS, COLABBENCH_BELIEF_GRADING_1_LOSS, COLABBENCH_BELIEF_GRADING_2_NO_LOSS, COLABBENCH_BELIEF_GRADING_3_LOSS, COLABBENCH_BELIEF_GRADING_4_NO_LOSS, COLABBENCH_BELIEF_GRADING_5_LOSS
+                        from agent_system.environments.prompts.colabbench import COLABBENCH_BELIEF_GRADING_0_NO_LOSS, COLABBENCH_BELIEF_GRADING_1_LOSS, COLABBENCH_BELIEF_GRADING_2_NO_LOSS, COLABBENCH_BELIEF_GRADING_3_LOSS, COLABBENCH_BELIEF_GRADING_4_NO_LOSS, COLABBENCH_BELIEF_GRADING_5_LOSS, COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_0_NO_LOSS, COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_1_LOSS
                         input_ids_list = []
                         labels_list = []
                         def extract(tag, s):
@@ -934,6 +934,7 @@ class TrajectoryCollector:
                             attention_mask = pad_sequence([torch.tensor([1]*len(t)) for t in input_ids_list], batch_first=True, padding_value=0, padding_side='left')
                             position_ids = compute_position_id_with_mask(attention_mask)
                             return input_ids, labels, attention_mask, position_ids
+                        # breakpoint()
                         
                         for c in all_belief_contexts:
                             if c['is_action_valid']:
@@ -953,8 +954,16 @@ class TrajectoryCollector:
                                     record_prob_for_parts=[0,1,0,1,0,1]
                                 elif int(self.config.trainer.belief_state_grading_type) == 1:
                                     record_prob_for_parts=[0,0,0,0,0,1] # lets ensure that this is properly triggered
-                                else:
+                                elif int(self.config.trainer.belief_state_grading_type) == 2:
                                     record_prob_for_parts=[0,0,0,1,0,1]
+                                else:
+                                    # new int 3 case, where I change the prompt parts. I now want the log prob of the correct answer based on the 
+                                    prompt_parts=[
+                                        COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_0_NO_LOSS.format(belief_state=c['filtered_belief_generations'], first_user_query=c['info']['problem_description']),
+                                        COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_1_LOSS.format(code=c['info']['ground_truth'].strip()),
+                                    ]
+                                    record_prob_for_parts = [0,1]
+                                    ...
                                 prompt_parts_tokenized = [self.tokenizer.encode(s) for s in prompt_parts]
                                 input_ids_list.append(sum(prompt_parts_tokenized, []))
                                 labels_list.append(sum([list(ids) if record else [-100] * len(ids) for record, ids in zip(record_prob_for_parts, prompt_parts_tokenized)], []))
@@ -984,7 +993,10 @@ class TrajectoryCollector:
                         belief_grades[belief_grade_token_mask] = -10 # this is just empty seq, so shouldn't matter what value I set it to. doing -10 for safety tho.
 
                         for c, belief_grade in zip(all_belief_contexts, belief_grades):
-                            c['info']['belief_grade'] = min((belief_grade.item() // 0.2) * 0.2, self.config.trainer.ceiling_belief_grading_reward) # rounding to nearest 0.2 because we use GRPO normalizing by std, which will take the difference too hard.
+                            if int(self.config.trainer.belief_state_grading_type) == 3:
+                                c['info']['belief_grade'] = min((belief_grade.item() // 0.1) * 0.1, self.config.trainer.ceiling_belief_grading_reward) # rounding to nearest 0.1 because we use GRPO normalizing by std, which will take the difference too hard.
+                            else:
+                                c['info']['belief_grade'] = min((belief_grade.item() // 0.2) * 0.2, self.config.trainer.ceiling_belief_grading_reward) # rounding to nearest 0.2 because we use GRPO normalizing by std, which will take the difference too hard.
 
                         primary_belief_contexts, secondary_belief_contexts = all_belief_contexts[:len(flattened_valid_belief_contexts)], all_belief_contexts[len(flattened_valid_belief_contexts):]
                         new_total_batch_list = copy(total_batch_list)
