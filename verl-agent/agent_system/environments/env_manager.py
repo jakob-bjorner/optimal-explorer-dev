@@ -717,6 +717,8 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
         self.memory = []
         self.action_or_belief = np.zeros(len(text_obs), dtype=np.bool) # 0 means actions being generated, 1 means beliefs
         self.prior_beliefs = [None] * len(text_obs)
+        self.prior_action = [None] * len(text_obs)
+        self.prior_obs = [None] * len(text_obs)
         self.prior_belief_messages: List = [None] * len(text_obs) # this for tracking when a belief is not being generated correctly.
         self.tasks = text_obs.copy()
         self.pre_text_obs = text_obs
@@ -724,7 +726,6 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
         self.action_generation_failures = 0
         self.successful_searches = 0
         is_not_processing = np.zeros(len(text_obs), dtype=np.bool)
-
         chat = self._build_chat_obs(text_obs, None, None, None, None, None, None, None, is_not_processing, None, init=True)
         return {'text': ['']*len(chat), 'image': None, 'anchor': text_obs, 'chat': chat}, infos
 
@@ -879,6 +880,9 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
                         else:
                             agent_action = "invalid action"
                             env_response = NQHOTPOTQA_ENV_RESPONSE
+                        self.prior_action[i] = agent_action
+                        self.prior_obs[i] = env_response
+
                         if self.config.env.force_full_step_len:
                             agent_first_message = NQHOTPOTQA_FULL_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]})
                         else:
@@ -906,7 +910,6 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
                                                {'role': 'user', 'content': text_obs[i]}]
                         postprocess_text_obs.append(new_action_messages)
                     else:
-
                         if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
                             env_response = text_obs[i]
                             # for the single_context withoutout belief messages (ie Vanilla setting), we modify the environment response, such that it's hint is consistent with ABBEL's hint formatting not MEM1's.
@@ -929,7 +932,14 @@ class NQHotpotQAEnvironmentManager(EnvironmentManagerBase):
                             else:
                                 agent_first_message = NQHOTPOTQA_AGENT_FIRST_MESSAGE.format_map({"question": self.questions[i]})
                             hint = "It is your last step." if infos[i]['is_last_step'] else f"You have {infos[i]['steps_remaining']} steps remaining."
-                            new_action_messages = [{'role':'user', 'content': (NQHOTPOTQA_FULL_ACTION_PROMPT if self.config.env.force_full_step_len else NQHOTPOTQA_ACTION_PROMPT).format(agent_first_message=agent_first_message, belief_state=belief, hint=hint)}]
+                            if self.config.env.prompt_info_type == 1 and self.prior_action[i] is not None:
+                                # , prior_obs=self.prior_obs[i]
+                                new_action_messages = [{'role':'user', 'content': NQHOTPOTQA_ACTION_PROMPT_TYPE_1.format(agent_first_message=agent_first_message, prior_action=self.prior_action[i], belief_state=belief, hint=hint)}]
+                            elif self.config.env.prompt_info_type == 2 and self.prior_action[i] is not None:
+                                new_action_messages = [{'role':'user', 'content': NQHOTPOTQA_ACTION_PROMPT_TYPE_2.format(agent_first_message=agent_first_message, prior_action=self.prior_action[i], prior_env_response=self.prior_obs[i], belief_state=belief, hint=hint)}]
+                            else:
+                                new_action_messages = [{'role':'user', 'content': (NQHOTPOTQA_FULL_ACTION_PROMPT if self.config.env.force_full_step_len else NQHOTPOTQA_ACTION_PROMPT).format(agent_first_message=agent_first_message, belief_state=belief, hint=hint)}]
+
                             if self.config.actor_rollout_ref.rollout.single_context:
                                 new_action_messages = [{'role': "user", 'content': NQHOTPOTQA_ACTION_PROMPT_SINGLE_CONTEXT}]
                             postprocess_text_obs.append(new_action_messages)

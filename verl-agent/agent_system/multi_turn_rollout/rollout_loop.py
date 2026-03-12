@@ -51,6 +51,7 @@ class TrajectoryCollector:
         self.config = config
         self.tokenizer = tokenizer
         self.processor = processor
+        self.maxes = None
 
     def preprocess_single_sample(
         self,
@@ -359,6 +360,8 @@ class TrajectoryCollector:
         belief_lengths = [[] for _ in range(batch_size)]
         episode_lengths = np.zeros(batch_size, dtype=np.int32)
         episode_rewards = np.zeros(batch_size, dtype=np.float32)
+        if self.maxes is None:
+            self.maxes = [-5] * batch_size
 
         # need a completely different loop to handle single context stuff, because else it will be really messy. Almost none will be shared I think.
         if self.config.actor_rollout_ref.actor.single_context:
@@ -661,7 +664,7 @@ class TrajectoryCollector:
             # if they don't terminate, we give a -1 reward in the combolock setting.
         
         print(time.time() - start_time)
-        # breakpoint() # should look at how many tokens were generated and how many were used as prompt tokens. I guess this is documented.
+        # should look at how many tokens were generated and how many were used as prompt tokens. I guess this is documented.
         if self.config.env.non_terminal_penalty:
             episode_rewards[np.logical_not(is_done) | prompt_too_long] += -self.config.env.non_terminal_penalty
         # does episode reward not count towards GRPO? No it does, funny enough, the reward thing I think we record per step isn't used tho. seems just for logging.
@@ -828,7 +831,7 @@ class TrajectoryCollector:
                     async def generate_all(prompts):
                         return await asyncio.gather(*[generate(p, 40) for p in prompts])
                     belief_grading_response_strs = asyncio.run(generate_all(grading_prompts))
-                    # breakpoint()
+
                     # then we parse the strs, and get the ground truth 
 
                     pattern = r"in position 1: (.*)\n.*in position 2: (.*)\n.*in position 3: (.*)" # this is specific to the prompt we use, but whatever. storing it here for now.
@@ -921,7 +924,6 @@ class TrajectoryCollector:
                         #   surprisal of predicting the next belief -log P(b_t+1 | b_t) information gain of world model.
                         #   Multiple observations and actions. Caching. (do all the actions within the span.)
                         # I'll focus on the first two belief grading options up
-                        # breakpoint()
                         # need to generate the grade for all beliefs
                         from agent_system.environments.prompts.colabbench import COLABBENCH_BELIEF_GRADING_0_NO_LOSS, COLABBENCH_BELIEF_GRADING_1_LOSS, COLABBENCH_BELIEF_GRADING_2_NO_LOSS, COLABBENCH_BELIEF_GRADING_3_LOSS, COLABBENCH_BELIEF_GRADING_4_NO_LOSS, COLABBENCH_BELIEF_GRADING_5_LOSS, COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_0_NO_LOSS, COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_1_LOSS
                         input_ids_list = []
@@ -934,7 +936,6 @@ class TrajectoryCollector:
                             attention_mask = pad_sequence([torch.tensor([1]*len(t)) for t in input_ids_list], batch_first=True, padding_value=0, padding_side='left')
                             position_ids = compute_position_id_with_mask(attention_mask)
                             return input_ids, labels, attention_mask, position_ids
-                        # breakpoint()
                         
                         for c in all_belief_contexts:
                             if c['is_action_valid']:
@@ -988,15 +989,21 @@ class TrajectoryCollector:
                         log_prob_prior_info_given_future_belief = actor_rollout_wg.compute_log_prob(input_for_belief_grading).batch['old_log_probs']
                         # some implementations of the log_prob don't work with the -100 labels, so actually I have to post process the log_probs.
                         log_prob_prior_info_given_future_belief[labels[:, 1:] == -100] = 0.0
-                        belief_grades = log_prob_prior_info_given_future_belief.sum(-1) / (labels[:, 1:] != -100).sum(-1)
+                        belief_grades = log_prob_prior_info_given_future_belief.sum(-1) / (labels[:, 1:] != -100).sum(-1) # 64 #
                         belief_grade_token_mask = belief_grades.isnan()
-                        belief_grades[belief_grade_token_mask] = -10 # this is just empty seq, so shouldn't matter what value I set it to. doing -10 for safety tho.
+                        belief_grades[belief_grade_token_mask] = -5 # this is just empty seq, so shouldn't matter what value I set it to. doing -10 for safety tho.
+
+                        
 
                         for c, belief_grade in zip(all_belief_contexts, belief_grades):
-                            if int(self.config.trainer.belief_state_grading_type) == 3:
-                                c['info']['belief_grade'] = min((belief_grade.item() // 0.1) * 0.1, self.config.trainer.ceiling_belief_grading_reward) # rounding to nearest 0.1 because we use GRPO normalizing by std, which will take the difference too hard.
-                            else:
-                                c['info']['belief_grade'] = min((belief_grade.item() // 0.2) * 0.2, self.config.trainer.ceiling_belief_grading_reward) # rounding to nearest 0.2 because we use GRPO normalizing by std, which will take the difference too hard.
+                            belief_grade = min(belief_grade.item(), self.config.trainer.ceiling_belief_grading_reward)
+                            belief_grade = max(belief_grade, -5) # -5 is a guess at the rough poorest performance we can expect.
+                            c['info']['belief_grade'] = belief_grade
+                        
+                        #     if int(self.config.trainer.belief_state_grading_type) == 3:
+                        #         c['info']['belief_grade'] = min((belief_grade.item() // 0.1) * 0.1, self.config.trainer.ceiling_belief_grading_reward) # rounding to nearest 0.1 because we use GRPO normalizing by std, which will take the difference too hard.
+                        #     else:
+                        #         c['info']['belief_grade'] = min((belief_grade.item() // 0.2) * 0.2, self.config.trainer.ceiling_belief_grading_reward) # rounding to nearest 0.2 because we use GRPO normalizing by std, which will take the difference too hard.
 
                         primary_belief_contexts, secondary_belief_contexts = all_belief_contexts[:len(flattened_valid_belief_contexts)], all_belief_contexts[len(flattened_valid_belief_contexts):]
                         new_total_batch_list = copy(total_batch_list)
@@ -1007,19 +1014,56 @@ class TrajectoryCollector:
                         new_traj_uid = traj_uid.tolist()
                         i = 0
                         belief_states_graded_in_chain = 0
+                        new_max_updates = list(self.maxes)
+                        old_maxes = list(self.maxes)
+                        log_obs_list = list()
+                        advantage_magnitude_list = list()
 
+
+
+                        # ok, so for each environment I maintain a max, then I update their max upon getting a new highest reward.
+                        # the difference should be much fewer gradient updates, but how should I implement this change because if
+                        # the model updates whenever there is something slightly above the current max, and there is a cap on what 
+                        # could be considered the max, it will asymptotically converge, perhaps I set a quantization or rounding of 
+                        # 0.0001, and then itll happen in finite time. The other issue is that as opposed to a ppo with value model 
+                        # implementation, I have to have something to compare this belief grade to, perhaps it isn't so bad, two 
+                        # rewards which are very low  won't be able to be improved, which feels wrong, this however connects to the
+                        # mountain car game where the model climbing up the hill will not recieve the reward of log obs reconstruction 
+                        # improvement again after a certain threshold. Having the negative baseline of a poorer performing policy seems 
+                        # fine.
+                        uid_to_idx = {uid_i: i for i, uid_i in enumerate(uid_batch)}
+                        ema_factor = 0.9
                         while i < len(primary_belief_contexts):
                             primary_belief_context = primary_belief_contexts[i]
                             secondary_belief_context = secondary_belief_contexts[i]
                             primary_reward = primary_belief_context['info']['belief_grade']
-                            secondary_reward = -10.0 if not secondary_belief_context['is_action_valid'] else secondary_belief_context['info']['belief_grade']
+                            secondary_reward = -5.0 if not secondary_belief_context['is_action_valid'] else secondary_belief_context['info']['belief_grade']
+
                             primary_traj_uid = str(uuid.uuid4())
                             secondary_traj_uid = str(uuid.uuid4())
 
                             primary_belief_context['traj_uid'] = primary_traj_uid
                             secondary_belief_context['traj_uid'] = secondary_traj_uid
+                            
+                            # update the primary and secondary_reward here if they are more than the prior maxes.
+                            assert primary_belief_context['info']["parent_uid"] == secondary_belief_context['info']["parent_uid"]
+                            idx_of_uid_of_belief = uid_to_idx[primary_belief_context['info']["parent_uid"]]
+                            log_obs_list.extend([primary_reward, secondary_reward])
+                            og_primary_reward = primary_reward
+                            primary_phi = ema_factor * old_maxes[idx_of_uid_of_belief] + (1-ema_factor) * max(primary_reward, old_maxes[idx_of_uid_of_belief])
+                            secondary_phi = ema_factor * old_maxes[idx_of_uid_of_belief] + (1-ema_factor) * max(secondary_reward, old_maxes[idx_of_uid_of_belief])
+                            if primary_phi > old_maxes[idx_of_uid_of_belief] or secondary_phi  > old_maxes[idx_of_uid_of_belief]: 
+                                new_max_updates[idx_of_uid_of_belief] = max(primary_phi, secondary_phi, new_max_updates[idx_of_uid_of_belief])
+                            else:
+                                # I could skip these to speed up the runtime, but want to document them without changing too much code.
+                                assert primary_phi == secondary_phi
+                            primary_reward = primary_phi
+                            secondary_reward = secondary_phi
+
+                            advantage_magnitude_list.extend([abs((primary_reward - secondary_reward)/2) * self.config.trainer.belief_state_grading])
                             primary_belief_context['rewards'] = primary_reward
                             secondary_belief_context['rewards'] = secondary_reward
+
                             
                             new_total_batch_list.extend([[primary_belief_context], [secondary_belief_context]])
                             new_episode_rewards.extend([primary_reward, secondary_reward])
@@ -1032,24 +1076,29 @@ class TrajectoryCollector:
                                 # so if both are larger than 100, then I do this calculation, which will favor the shorter of the two.
                                 if primary_belief_context["filtered_belief_generations_len"] > 400 and secondary_belief_context["filtered_belief_generations_len"] > 400:
                                     new_episode_penalties.extend([primary_belief_context["filtered_belief_generations_len"]-avg, secondary_belief_context["filtered_belief_generations_len"]-avg])
-                                else: 
+                                else:
                                     new_episode_penalties.extend([0, 0])
 
                             else:
                                 new_episode_penalties.extend([0,0])
 
-                            new_traj_uid.extend([primary_traj_uid, secondary_traj_uid])
-                            if primary_reward < -1.6: # very heuristic guess. 
-                                # we skip the rest of the trajectory.
+                            new_traj_uid.extend([primary_traj_uid, secondary_traj_uid]) 
+                            if og_primary_reward < -1.4: # very heuristic guess. 
+                                # we skip the rest of the trajectory. 
                                 while i < len(primary_belief_contexts) and primary_belief_contexts[i]['info']["parent_traj_uid"] == primary_belief_context['info']["parent_traj_uid"]:
                                     i += 1
                                 continue
                             else:
                                 belief_states_graded_in_chain += 1
                             i += 1
-
-
-
+                        # print("maxes", self.maxes)
+                        for i, new_max_update in enumerate(new_max_updates):
+                            self.maxes[i] = new_max_update
+                        max_phis_list = self.maxes[self.config.env.rollout.n-1::self.config.env.rollout.n]
+                        # print("maxes", self.maxes)
+                        success['belief_grade_advantage_magnitude_mean_success_rate'] = np.array([np.array(advantage_magnitude_list).mean().item()] * len(primary_belief_contexts))
+                        success['belief_grade_phi_mean_success_rate'] = np.array([np.array(max_phis_list).mean().item()] * len(primary_belief_contexts))
+                        success['belief_grade_log_obs_mean_success_rate'] = np.array([np.array(log_obs_list).mean().item()] * len(primary_belief_contexts))
                         # adding different belief grading support for 
                         # (1) reconstruction of true answer with belief state, and 
                         # (2) correct answer generation with belief state. 
@@ -1135,7 +1184,6 @@ class TrajectoryCollector:
                             rewards.extend(rewards_batch)
                             new_action_response_strs_batch_ordering.extend(new_action_response_strs_batch)
                         # todo, check this ordering operation matches the actions that were taken.
-                        # breakpoint()
                         """
                         actions_ordered = [ r for r, _ in 
                                             sorted([(r, bci) for r, a, bci in zip(new_action_response_strs_batch_ordering, actives, belief_context_index) if a == True],
@@ -1214,7 +1262,7 @@ class TrajectoryCollector:
                     episode_lengths = np.array(new_episode_lengths)
                     episode_penalties = np.array(new_episode_penalties)
                     traj_uid = np.array(new_traj_uid)
-                    success['total_avg_belief_grade_success_rate'] = np.array([belief_grades[~belief_grade_token_mask].mean().item()] * len(primary_belief_contexts)) / len(primary_belief_contexts)
+                    success['total_avg_belief_grade_success_rate'] = np.array([belief_grades[~belief_grade_token_mask].mean().item()] * len(primary_belief_contexts)) # / len(primary_belief_contexts)
                     success['fraction_parsable_belief_states_success_rate'] = np.array([belief_states_graded_in_chain] * len(primary_belief_contexts)) / len(primary_belief_contexts)
                 if len(episode_penalties) != len(episode_rewards):
                     episode_penalties = np.array(episode_penalties.tolist() + [0] * (len(episode_rewards) - len(episode_penalties)))# we need a longer episode penalties to account for the new belief states being graded.
@@ -1222,12 +1270,10 @@ class TrajectoryCollector:
                 # all_belief_lens = np.array([ls[0]['filtered_belief_generations_len'] if ls[0]['info'].get('is_belief_grading_context', False) else 0 for ls in total_batch_list])
                 # valids = np.array([ls[0]['is_action_valid'] if ls[0]['info'].get('is_belief_grading_context', False) else 0 for ls in total_batch_list])
                 # valids = np.logical_and(valids, all_belief_lens > 0)
-                # # breakpoint()
                 # if valids.sum() > 0:
                 #     mean_belief_len = all_belief_lens[valids == 1].mean()
                 #     episode_penalties_temp = np.zeros_like(episode_rewards)
                 #     episode_penalties_temp[valids == 1] = all_belief_lens[valids == 1] # - mean_belief_len
-                #     # breakpoint()
                 #     episode_penalties = episode_penalties_temp
                 # else:
                 #     episode_penalties = np.array(np.zeros_like(episode_penalties).tolist() + [0] * (len(episode_rewards) - len(episode_penalties)))
