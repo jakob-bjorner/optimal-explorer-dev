@@ -125,6 +125,15 @@ NQHOTPOTQA_ACTION_PROMPT_SINGLE_CONTEXT="""Now think step by step and then outpu
 NQHOTPOTQA_ACTION_PROMPT="""Global Instruction: <instruction>{agent_first_message}</instruction>
 Current belief: <belief>{belief_state}</belief>
 Now think step by step and then output your next action formatted as <think> ... </think><search> ... </search> or <think> ... </think><answer> ... </answer>. Remember if it is your last step you must answer. {hint}"""
+NQHOTPOTQA_ACTION_PROMPT_TYPE_1="""Global Instruction: <instruction>{agent_first_message}</instruction>
+Past action: <search>{prior_action}</search>
+Current belief: <belief>{belief_state}</belief>
+Now think step by step and then output your next action formatted as <think> ... </think><search> ... </search> or <think> ... </think><answer> ... </answer>. Remember if it is your last step you must answer. {hint}"""
+NQHOTPOTQA_ACTION_PROMPT_TYPE_2="""Global Instruction: <instruction>{agent_first_message}</instruction>
+Past action: <search>{prior_action}</search>
+Past environment feedback: <environment>{prior_env_response}</environment>
+Current belief: <belief>{belief_state}</belief>
+Now think step by step and then output your next action formatted as <think> ... </think><search> ... </search> or <think> ... </think><answer> ... </answer>. Remember if it is your last step you must answer. {hint}"""
 NQHOTPOTQA_FULL_ACTION_PROMPT = """Global Instruction: <instruction>{agent_first_message}</instruction>
 Current belief: <belief>{belief_state}</belief>
 Now think step by step and then output your next action formatted as <think> ... </think><search> ... </search> or <think> ... </think><answer> ... </answer>. Remember only put an answer on your last step. If you have steps remaining, you must search. {hint}"""

@@ -242,7 +242,7 @@ def compute_response_mask(data: DataProto):
     return attention_mask[:, -response_length:]
 
 
-def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_repeat=1, multi_turn=False, norm_adv_by_std_in_grpo=True, step_advantage_w=1.0, gigpo_mode="mean_std_norm", **kwargs):
+def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_repeat=1, multi_turn=False, norm_adv_by_std_in_grpo=True, belief_grading_norm_adv_by_std_in_grpo=True, step_advantage_w=1.0, gigpo_mode="mean_std_norm", **kwargs):
     """Compute advantage estimates for policy optimization.
 
     This function computes advantage estimates using various estimators like GAE, GRPO, REINFORCE++, etc.
@@ -294,8 +294,10 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
             response_mask=grpo_calculation_mask,
             index=data.non_tensor_batch["uid"],
             traj_index=data.non_tensor_batch['traj_uid'],
-            norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+            norm_adv_by_std_in_grpo=[(norm_adv_by_std_in_grpo if not info.get('is_belief_grading_context', False) else belief_grading_norm_adv_by_std_in_grpo)  # this being false for belief grading isn't true with combolock, and will break things.
+                                     for info in data.non_tensor_batch["info"]],
         )
+        # [idx for idx, info in enumerate(batch.non_tensor_batch["info"]) if not info.get('is_belief_grading_context', False)]
 
         data.batch["advantages"] = advantages
         data.batch["returns"] = returns
@@ -1121,7 +1123,6 @@ class RayPPOTrainer:
                             reward_tensor, reward_extra_infos_dict = compute_reward(batch, self.reward_fn)
 
                     # recompute old_log_probs
-                    # breakpoint()
                     if not self.config.trainer.only_gen_once:
                         with _timer("old_log_prob", timing_raw):
                             old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
@@ -1203,7 +1204,7 @@ class RayPPOTrainer:
                         # compute advantages, executed on the driver process
 
                         norm_adv_by_std_in_grpo = self.config.algorithm.get("norm_adv_by_std_in_grpo", True)  # GRPO adv normalization factor
-
+                        belief_grading_norm_adv_by_std_in_grpo = self.config.algorithm.get("belief_grading_norm_adv_by_std_in_grpo", norm_adv_by_std_in_grpo)
                         batch = compute_advantage(
                             batch,
                             adv_estimator=self.config.algorithm.adv_estimator,
@@ -1211,6 +1212,7 @@ class RayPPOTrainer:
                             lam=self.config.algorithm.lam,
                             num_repeat=self.config.actor_rollout_ref.rollout.n,
                             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+                            belief_grading_norm_adv_by_std_in_grpo=belief_grading_norm_adv_by_std_in_grpo,
                             multi_turn=self.config.actor_rollout_ref.rollout.multi_turn.enable,
                             use_pf_ppo=self.config.algorithm.use_pf_ppo,
                             pf_ppo_reweight_method=self.config.algorithm.pf_ppo.reweight_method,
@@ -1233,7 +1235,6 @@ class RayPPOTrainer:
                         # this is a very particular (dumb) foot gun, made only so we don't have to rerun some expensive experiments.
                         # it says, that you know what you are doing.
                         # should only be used without belief state grading, and within the natural questions dataset.
-                        # breakpoint()
                         batch.batch['advantages'] -= torch.tensor(np.array(batch.non_tensor_batch['episode_penalties'].tolist()), dtype=batch.batch['advantages'].dtype, device=batch.batch['advantages'].device)[:,None] * self.config.trainer.post_normalization_length_penalty * batch.batch['response_mask']
                     if self.config.trainer.belief_state_grading:
                         belief_state_grading_mask = [info.get('is_belief_grading_context', False) for idx, info in enumerate(batch.non_tensor_batch["info"])]

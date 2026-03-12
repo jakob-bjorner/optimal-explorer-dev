@@ -115,8 +115,8 @@ def compute_grpo_outcome_advantage(
     response_mask: torch.Tensor,
     index: np.ndarray,
     traj_index: np.ndarray,
+    norm_adv_by_std_in_grpo: list[bool],
     epsilon: float = 1e-6,
-    norm_adv_by_std_in_grpo: str = True,
     compute_mean_std_cross_all_data: bool = False,
 ):
     """
@@ -127,7 +127,7 @@ def compute_grpo_outcome_advantage(
             shape is (bs, response_length)
         response_mask: `(torch.Tensor)`
             shape is (bs, response_length)
-        norm_adv_by_std_in_grpo: (bool)
+        norm_adv_by_std_in_grpo: list(bool)
             whether to scale the GRPO advantage.
             If True, the advantage is scaled by the std, as in the original GRPO.
             If False, the advantage is not scaled, as in Dr.GRPO (https://arxiv.org/abs/2503.20783).
@@ -165,7 +165,7 @@ def compute_grpo_outcome_advantage(
             else:
                 raise ValueError(f"no score in prompt index: {idx}")
         for i in range(bsz):
-            if norm_adv_by_std_in_grpo:
+            if norm_adv_by_std_in_grpo[i]:
                 scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
             else:
                 scores[i] = scores[i] - id2mean[index[i]]

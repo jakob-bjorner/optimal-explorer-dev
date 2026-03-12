@@ -45,7 +45,7 @@ else
 fi
 
 FORCE_FULL=${FORCE_FULL:-False}
-
+PROMPT_INFO_TYPE=${PROMPT_INFO_TYPE:-0}
 # invalid_action_penalty_coef=0.0
 # also their kl is 0.01 lol.
 # Need to change the max_prompt_len hyper param for real run. ahh its probably ok actually.
@@ -166,6 +166,7 @@ python3 -m examples.data_preprocess.prepare \
 
 # DEBUG=VANILLA CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_True_belief_prompting_False_is_mem1_False_belief_len_pen_0GRPO_INSTRUCT_VANILLA_NEW_HINT/global_step_260" SINGLE_CTX=True MULTI_MSG=False IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=16 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; DEBUG=VANILLA CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_True_belief_prompting_False_is_mem1_False_belief_len_pen_0GRPO_INSTRUCT_VANILLA_NEW_HINT/global_step_260" SINGLE_CTX=True MULTI_MSG=False IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; DEBUG=VANILLA CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_True_belief_prompting_False_is_mem1_False_belief_len_pen_0GRPO_INSTRUCT_VANILLA_NEW_HINT/global_step_260" SINGLE_CTX=True MULTI_MSG=False IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; DEBUG=VANILLA CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_True_belief_prompting_False_is_mem1_False_belief_len_pen_0GRPO_INSTRUCT_VANILLA_NEW_HINT/global_step_260" SINGLE_CTX=True MULTI_MSG=False IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=2 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; DEBUG=VANILLA CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_True_belief_prompting_False_is_mem1_False_belief_len_pen_0GRPO_INSTRUCT_VANILLA_NEW_HINT/global_step_260" SINGLE_CTX=True MULTI_MSG=False IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=1 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
 
+# DEBUG=GRPO_INSTRUCT_ABBEL_PROMPT_INFO_1 PROMPT_INFO_TYPE=1 CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0GRPO_INSTRUCT_ABBEL_PROMPT_INFO_1/global_step_260" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=16 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; DEBUG=GRPO_INSTRUCT_ABBEL_PROMPT_INFO_1 PROMPT_INFO_TYPE=1 CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0GRPO_INSTRUCT_ABBEL_PROMPT_INFO_1/global_step_260" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=8 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; DEBUG=GRPO_INSTRUCT_ABBEL_PROMPT_INFO_1 PROMPT_INFO_TYPE=1 CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0GRPO_INSTRUCT_ABBEL_PROMPT_INFO_1/global_step_260" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=4 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; DEBUG=GRPO_INSTRUCT_ABBEL_PROMPT_INFO_1 PROMPT_INFO_TYPE=1 CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0GRPO_INSTRUCT_ABBEL_PROMPT_INFO_1/global_step_260" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=2 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh; DEBUG=GRPO_INSTRUCT_ABBEL_PROMPT_INFO_1 PROMPT_INFO_TYPE=1 CKPT="qwen2.5-7b-instruct_16sfr_seed1_sc_False_belief_prompting_True_is_mem1_False_belief_len_pen_0GRPO_INSTRUCT_ABBEL_PROMPT_INFO_1/global_step_260" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 NUM_OBJECTIVES=1 bash examples/grpo_trainer/run_nqhotpotqa_inference.sh
 if [ -z "${CKPT+x}" ]; then
     RESUME_PATH=null
 else
@@ -221,6 +222,7 @@ python3 -m verl.trainer.main_ppo \
     env.max_steps=$MAX_STEPS \
     env.non_terminal_penalty=0.0 \
     env.rollout.n=1 \
+    +env.prompt_info_type=$PROMPT_INFO_TYPE \
     +env.force_full_step_len=$FORCE_FULL \
     +env.split=test \
     +env.num_objectives=$NUM_OBJECTIVES \
