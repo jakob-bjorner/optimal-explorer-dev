@@ -688,10 +688,10 @@ class TrajectoryCollector:
         success: Dict[str, np.ndarray] = envs.success_evaluator(
                     total_infos=total_infos,
                     total_batch_list=total_batch_list,
-                    episode_rewards=episode_rewards, 
+                    episode_rewards=episode_rewards,
                     episode_lengths=episode_lengths,
                     )
-        success["non_terminal_trajectories_success_rate"] = np.logical_not(is_done) | prompt_too_long # this should be prompt too long
+        success["non_terminal_trajectories_success_rate"] = (np.logical_not(is_done) | prompt_too_long).mean(keepdims=True) * len(prompt_too_long) # this should be prompt too long
         # add metrics as KV pairs to the success dict.
         
         # second RL after the RL steps. this could be done every few steps or something more heuristicy.
@@ -1050,15 +1050,16 @@ class TrajectoryCollector:
                             idx_of_uid_of_belief = uid_to_idx[primary_belief_context['info']["parent_uid"]]
                             log_obs_list.extend([primary_reward, secondary_reward])
                             og_primary_reward = primary_reward
-                            primary_phi = ema_factor * old_maxes[idx_of_uid_of_belief] + (1-ema_factor) * max(primary_reward, old_maxes[idx_of_uid_of_belief])
-                            secondary_phi = ema_factor * old_maxes[idx_of_uid_of_belief] + (1-ema_factor) * max(secondary_reward, old_maxes[idx_of_uid_of_belief])
-                            if primary_phi > old_maxes[idx_of_uid_of_belief] or secondary_phi  > old_maxes[idx_of_uid_of_belief]: 
-                                new_max_updates[idx_of_uid_of_belief] = max(primary_phi, secondary_phi, new_max_updates[idx_of_uid_of_belief])
-                            else:
-                                # I could skip these to speed up the runtime, but want to document them without changing too much code.
-                                assert primary_phi == secondary_phi
-                            primary_reward = primary_phi
-                            secondary_reward = secondary_phi
+                            # uncomment below for supporting potential based reward shaping.
+                            # primary_phi = ema_factor * old_maxes[idx_of_uid_of_belief] + (1-ema_factor) * max(primary_reward, old_maxes[idx_of_uid_of_belief])
+                            # secondary_phi = ema_factor * old_maxes[idx_of_uid_of_belief] + (1-ema_factor) * max(secondary_reward, old_maxes[idx_of_uid_of_belief])
+                            # if primary_phi > old_maxes[idx_of_uid_of_belief] or secondary_phi  > old_maxes[idx_of_uid_of_belief]: 
+                            #     new_max_updates[idx_of_uid_of_belief] = max(primary_phi, secondary_phi, new_max_updates[idx_of_uid_of_belief])
+                            # else:
+                            #     # I could skip these to speed up the runtime, but want to document them without changing too much code.
+                            #     assert primary_phi == secondary_phi
+                            # primary_reward = primary_phi
+                            # secondary_reward = secondary_phi
 
                             advantage_magnitude_list.extend([abs((primary_reward - secondary_reward)/2) * self.config.trainer.belief_state_grading])
                             primary_belief_context['rewards'] = primary_reward
