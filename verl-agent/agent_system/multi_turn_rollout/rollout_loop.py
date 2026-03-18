@@ -989,7 +989,7 @@ class TrajectoryCollector:
                         log_prob_prior_info_given_future_belief = actor_rollout_wg.compute_log_prob(input_for_belief_grading).batch['old_log_probs']
                         # some implementations of the log_prob don't work with the -100 labels, so actually I have to post process the log_probs.
                         log_prob_prior_info_given_future_belief[labels[:, 1:] == -100] = 0.0
-                        belief_grades = log_prob_prior_info_given_future_belief.sum(-1) / 64 # (labels[:, 1:] != -100).sum(-1) # 64 #
+                        belief_grades = log_prob_prior_info_given_future_belief.sum(-1) / 64 # (labels[:, 1:] != -100).sum(-1) 
                         belief_grade_token_mask = belief_grades.isnan()
                         belief_grades[belief_grade_token_mask] = -5 # this is just empty seq, so shouldn't matter what value I set it to. doing -10 for safety tho.
 
