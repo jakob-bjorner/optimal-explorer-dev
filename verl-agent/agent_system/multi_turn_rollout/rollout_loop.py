@@ -265,6 +265,9 @@ class TrajectoryCollector:
         
         belief_episode_rewards_mean = np.mean(episode_rewards[np.logical_not(not_is_belief_grading_context_list)])
         belief_episode_length_mean = np.mean([trajectory_list[0].get('filtered_belief_generations_len', 0) for not_is_belief_grading_context, trajectory_list in zip(not_is_belief_grading_context_list, total_batch_list) if not not_is_belief_grading_context])
+        if np.isnan(belief_episode_length_mean): #
+            belief_lengths = [context.get('filtered_belief_generations_len', 0) for trajectory_list in total_batch_list for context in trajectory_list if context.get('filtered_belief_generations_len', 0) != 0]
+            belief_episode_length_mean = np.mean(belief_lengths)
         episode_lengths_mean = np.mean(episode_lengths[not_is_belief_grading_context_list])
         episode_lengths_min = np.min(episode_lengths[not_is_belief_grading_context_list])
         episode_lengths_max = np.max(episode_lengths[not_is_belief_grading_context_list])
