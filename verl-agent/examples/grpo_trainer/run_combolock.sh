@@ -18,7 +18,9 @@ val_data_size=8
 group_size=2
 B=${B:-7}
 GRADE_BELIEF=${GRADE_BELIEF:-0.0}
-
+FULL_HIST_BELIEF=${FULL_HIST_BELIEF:-False}
+GRADE_BELIEF_TYPE=${GRADE_BELIEF_TYPE:-0}
+MODEL_NAME=${MODEL_NAME:-"qwen/qwen2.5-${B}b-instruct"}
 
 # invalid_action_penalty_coef=0.0
 # also their kl is 0.01 lol.
@@ -64,6 +66,7 @@ python3 -m examples.data_preprocess.prepare \
 # B=3 train_data_size=4 GRADE_BELIEF=1.0 DEBUG=combolock_vs_r1_test bash examples/grpo_trainer/run_combolock.sh
 # B=7 train_data_size=16 SEED=3 GRADE_BELIEF=2.0 DEBUG=combolock_vs_r1_new_parse5 bash examples/grpo_trainer/run_combolock.sh
 # B=7 train_data_size=16 SEED=3 SINGLE_CTX=True MULTI_MSG=False DEBUG=combolock_vanilla bash examples/grpo_trainer/run_combolock.sh; B=7 train_data_size=16 SEED=3 SINGLE_CTX=True MULTI_MSG=True DEBUG=combolock_belief_prompting bash examples/grpo_trainer/run_combolock.sh
+# B=7 train_data_size=16 SEED=1 FULL_HIST_BELIEF=True MAX_PROMPT_LEN=4096 DEBUG=combolock_full_history bash examples/grpo_trainer/run_combolock.sh;
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -76,7 +79,7 @@ python3 -m verl.trainer.main_ppo \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.return_raw_chat=True \
-    actor_rollout_ref.model.path=qwen/qwen2.5-${B}b-instruct \
+    actor_rollout_ref.model.path=$MODEL_NAME \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=16 \
@@ -112,12 +115,14 @@ python3 -m verl.trainer.main_ppo \
     env.non_terminal_penalty=1.0 \
     +env.vocab="0123456789" \
     +env.max_attempts=12 \
+    +env.full_history_belief=$FULL_HIST_BELIEF \
     env.rollout.n=$group_size \
+    +trainer.belief_state_grading_type=$GRADE_BELIEF_TYPE \
     trainer.belief_state_grading=$GRADE_BELIEF \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_agent_alfworld' \
-    trainer.experiment_name=grpo_qwen2.5_${B}b_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}_BG_${GRADE_BELIEF}${DEBUG} \
+    trainer.experiment_name=grpo_qwen2.5_7b_16sfr_seed${SEED}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}_BG_${GRADE_BELIEF}${DEBUG} \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \

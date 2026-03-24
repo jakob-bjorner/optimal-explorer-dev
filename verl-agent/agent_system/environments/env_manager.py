@@ -553,6 +553,9 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
         new_action_or_belief = ~(self.action_or_belief & np.array(valids, dtype=np.bool)) # you go to belief state unless you generate a valid belief while in belief state.
         if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
             new_action_or_belief = self.action_or_belief * 0
+        if self.config.env.full_history_belief:
+            new_action_or_belief = self.action_or_belief * 0
+            # and we populate the belief for a new action prompt with the ground truth belief of our choice. this is done in the build_chat_obs
         self.belief_generation_failures += (self.action_or_belief & ~np.array(valids, dtype=np.bool) & ~is_not_processing).sum()
         self.action_generation_failures += (~self.action_or_belief & ~np.array(valids, dtype=np.bool) & ~is_not_processing).sum()
         self.memory.append(deepcopy((text_obs, rewards, dones, infos, new_action_or_belief, valids, action_or_belief_texts)))
@@ -642,7 +645,24 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
                     postprocess_text_obs.append(new_belief_messages)
                 else:
                     # this is action generation prep
-                    if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
+                    if self.config.env.full_history_belief:
+                        env_response = text_obs[i]
+                        if len(self.memory) == 1:
+                            prior_belief = COMBO_NO_PRIOR_BELIEF_MESSAGE
+                        else:
+                            prior_belief = self.prior_beliefs[i]
+                        # from when I only wanted the action saved in the history
+                        action = actions_or_beliefs[i]
+                        belief = prior_belief + "\n<ask>" + action.strip() + "</ask>\n<environment>" + env_response.strip() + "</environment>"
+                        # to now having the thinking also saved along with the action
+                        # action = full_text_actions[i]
+                        # belief = prior_belief + "\n" + action.strip() + "\n<environment>" + env_response.strip() + "</environment>"
+                        agent_first_message = COMBO_AGENT_FIRST_MESSAGE.format_map({"vocab_list": list(self.config.env.vocab), "max_attempts": self.config.env.max_attempts})
+                        # hint = "It is your last step." if infos[i]['is_last_step'] else f"You have {infos[i]['steps_remaining']} steps remaining." in combolock we lack a hint, but seems to be fine.
+                        new_action_messages = [{'role':'user', 'content': COMBO_ACTION_PROMPT.format(agent_first_message=agent_first_message, belief_state=belief)}]
+                        self.prior_beliefs[i] = belief
+                        postprocess_text_obs.append(new_action_messages)
+                    elif self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
                         env_response = text_obs[i]
                         new_action_messages = [{'role': "user", 'content': env_response}]
                         postprocess_text_obs.append(new_action_messages)

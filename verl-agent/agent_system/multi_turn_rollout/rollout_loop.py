@@ -605,8 +605,8 @@ class TrajectoryCollector:
                             add_generation_prompt=True,
                             tokenize=True
                         )
-                        if len(input_ids) >= self.config.data.max_prompt_length:
-                            prompt_too_long[i] = (True)
+                        if not (is_done[i] or dones[i]) and len(input_ids) >= self.config.data.max_prompt_length:
+                            prompt_too_long[i] = True
 
 
                 if 'is_action_valid' in infos[0]:
@@ -669,9 +669,9 @@ class TrajectoryCollector:
         print(time.time() - start_time)
         # should look at how many tokens were generated and how many were used as prompt tokens. I guess this is documented.
         if self.config.env.non_terminal_penalty:
-            episode_rewards[np.logical_not(is_done) | prompt_too_long] += -self.config.env.non_terminal_penalty
+            episode_rewards[np.logical_not(is_done) | prompt_too_long] = -self.config.env.non_terminal_penalty
         # does episode reward not count towards GRPO? No it does, funny enough, the reward thing I think we record per step isn't used tho. seems just for logging.
-
+        # breakpoint()
         # need to consider if this if statement can be commented out...
         # if self.config.env.belief_length_penalty: # 0.1
         # only want to further penalize the runs which did terminate, and terminated with some correct output. to make them correct and smaller.
@@ -694,7 +694,7 @@ class TrajectoryCollector:
                     episode_rewards=episode_rewards,
                     episode_lengths=episode_lengths,
                     )
-        success["non_terminal_trajectories_success_rate"] = (np.logical_not(is_done) | prompt_too_long).mean(keepdims=True) * len(prompt_too_long) # this should be prompt too long
+        success["non_terminal_trajectories_success_rate"] = (np.logical_not(is_done) | prompt_too_long).mean(keepdims=True) # this should be prompt too long
         # add metrics as KV pairs to the success dict.
         
         # second RL after the RL steps. this could be done every few steps or something more heuristicy.
@@ -787,7 +787,7 @@ class TrajectoryCollector:
                 all_belief_contexts = flattened_valid_belief_contexts + new_belief_contexts
                 for c in all_belief_contexts:
                     c['info'].update({"is_belief_grading_context": True})
-                if self.config.env.env_name == "combolock":
+                if self.config.env.env_name == "combolock" and self.config.trainer.belief_state_grading_type == 0:
                     from agent_system.environments.prompts.combolock import COMBO_BELIEF_GRADING_PROMPT, COMBO_BELIEF_GRADING_PROMPT_FILLER_BELIEF
                     grading_prompts = [COMBO_BELIEF_GRADING_PROMPT.format(belief=c['filtered_belief_generations']) if c['is_action_valid'] else "" for c in all_belief_contexts] 
                     # I decide not to filter out the invalids here, and just grade everything because its less book keeping. shouldn't be too bad when the code is working well. < 1/6 beliefs seem to fail.
@@ -907,7 +907,7 @@ class TrajectoryCollector:
                     episode_lengths = np.array(new_episode_lengths)
                     traj_uid = np.array(new_traj_uid)
                     success['fraction_parsable_belief_states_success_rate'] = np.array([parsable_belief_states] * len(primary_belief_contexts)) / len(primary_belief_contexts)
-                elif self.config.env.env_name == "colabbench":
+                elif self.config.env.env_name == "colabbench" or (self.config.env.env_name == "combolock" and self.config.trainer.belief_state_grading_type != 0):
                     if self.config.trainer.belief_state_grading_type >= 0:
 
                         # possibilities to try for rebuttal:
@@ -929,6 +929,7 @@ class TrajectoryCollector:
                         # I'll focus on the first two belief grading options up
                         # need to generate the grade for all beliefs
                         from agent_system.environments.prompts.colabbench import COLABBENCH_BELIEF_GRADING_0_NO_LOSS, COLABBENCH_BELIEF_GRADING_1_LOSS, COLABBENCH_BELIEF_GRADING_2_NO_LOSS, COLABBENCH_BELIEF_GRADING_3_LOSS, COLABBENCH_BELIEF_GRADING_4_NO_LOSS, COLABBENCH_BELIEF_GRADING_5_LOSS, COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_0_NO_LOSS, COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_1_LOSS
+                        from agent_system.environments.prompts.combolock import COMBO_BELIEF_GRADING_0_NO_LOSS, COMBO_BELIEF_GRADING_1_LOSS, COMBO_BELIEF_GRADING_2_NO_LOSS, COMBO_BELIEF_GRADING_3_LOSS, COMBO_BELIEF_GRADING_4_NO_LOSS, COMBO_BELIEF_GRADING_5_LOSS
                         input_ids_list = []
                         labels_list = []
                         def extract(tag, s):
@@ -945,14 +946,24 @@ class TrajectoryCollector:
                                 true_prior_obs = extract("environment", c['input_ids_str'])
                                 true_prior_belief = extract("belief", c['input_ids_str'])
                                 true_prior_action = extract("action", c['input_ids_str'])
-                                prompt_parts=[
-                                    COLABBENCH_BELIEF_GRADING_0_NO_LOSS.format(future_belief=c['filtered_belief_generations'], first_user_query=c['info']['problem_description']),
-                                    COLABBENCH_BELIEF_GRADING_1_LOSS.format(prior_belief=true_prior_belief), 
-                                    COLABBENCH_BELIEF_GRADING_2_NO_LOSS, 
-                                    COLABBENCH_BELIEF_GRADING_3_LOSS.format(prior_action=true_prior_action), 
-                                    COLABBENCH_BELIEF_GRADING_4_NO_LOSS, 
-                                    COLABBENCH_BELIEF_GRADING_5_LOSS.format(prior_obs=true_prior_obs)
-                                ]
+                                if self.config.env.env_name == "combolock":
+                                    prompt_parts=[
+                                        COMBO_BELIEF_GRADING_0_NO_LOSS.format(future_belief=c['filtered_belief_generations']),
+                                        COMBO_BELIEF_GRADING_1_LOSS.format(prior_belief=true_prior_belief), 
+                                        COMBO_BELIEF_GRADING_2_NO_LOSS, 
+                                        COMBO_BELIEF_GRADING_3_LOSS.format(prior_action=true_prior_action), 
+                                        COMBO_BELIEF_GRADING_4_NO_LOSS, 
+                                        COMBO_BELIEF_GRADING_5_LOSS.format(prior_obs=true_prior_obs)
+                                    ]
+                                else:
+                                    prompt_parts=[
+                                        COLABBENCH_BELIEF_GRADING_0_NO_LOSS.format(future_belief=c['filtered_belief_generations'], first_user_query=c['info']['problem_description']),
+                                        COLABBENCH_BELIEF_GRADING_1_LOSS.format(prior_belief=true_prior_belief), 
+                                        COLABBENCH_BELIEF_GRADING_2_NO_LOSS, 
+                                        COLABBENCH_BELIEF_GRADING_3_LOSS.format(prior_action=true_prior_action), 
+                                        COLABBENCH_BELIEF_GRADING_4_NO_LOSS, 
+                                        COLABBENCH_BELIEF_GRADING_5_LOSS.format(prior_obs=true_prior_obs)
+                                    ]
                                 
                                 if int(self.config.trainer.belief_state_grading_type) == 0:
                                     record_prob_for_parts=[0,1,0,1,0,1]
@@ -962,10 +973,13 @@ class TrajectoryCollector:
                                     record_prob_for_parts=[0,0,0,1,0,1]
                                 else:
                                     # new int 3 case, where I change the prompt parts. I now want the log prob of the correct answer based on the 
-                                    prompt_parts=[
-                                        COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_0_NO_LOSS.format(belief_state=c['filtered_belief_generations'], first_user_query=c['info']['problem_description']),
-                                        COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_1_LOSS.format(code=c['info']['ground_truth'].strip()),
-                                    ]
+                                    if self.config.env.env_name == "combolock":
+                                        raise NotImplemented
+                                    else:
+                                        prompt_parts=[
+                                            COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_0_NO_LOSS.format(belief_state=c['filtered_belief_generations'], first_user_query=c['info']['problem_description']),
+                                            COLABBENCH_BELIEF_GRADING_REF_RECONSTRUCTION_1_LOSS.format(code=c['info']['ground_truth'].strip()),
+                                        ]
                                     record_prob_for_parts = [0,1]
                                     ...
                                 prompt_parts_tokenized = [self.tokenizer.encode(s) for s in prompt_parts]

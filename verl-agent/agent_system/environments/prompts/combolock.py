@@ -113,4 +113,32 @@ COMBO_BELIEF_GRADING_PROMPT_FILLER_BELIEF = """- 2 is in the lock and in Positio
 - Remaining valid characters for Position 1 and Position 3: ['4', '5', '6', '7', '8'].
 - 3 and 9 are not in the lock."""
 
+
+COMBO_BELIEF_GRADING_0_NO_LOSS = """You will determine the correct combination of characters at [Position 1, Position 2, Position 3] in a 3-character combination lock through iterative reasoning and queries.
+All 3 characters are unique.
+The set of valid characters are as follows: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+Each action is a query of the form ['char 1', 'char 2', 'char 3'].
+Each time you query a combination, you will get feedback from the user about each character: either not in the combination, in the combination but in a different position, or in the combination and in the right position.
+You can make up to 12 queries.
+Your goal is to find the correct combination in the least number of queries.
+Your new belief state is: <belief>{future_belief}</belief>
+
+Your past belief state was: <belief>"""
+COMBO_BELIEF_GRADING_1_LOSS = """{prior_belief}</belief>
+
+"""
+
+COMBO_BELIEF_GRADING_2_NO_LOSS = """Your past action: <action>"""
+
+COMBO_BELIEF_GRADING_3_LOSS = """{prior_action}</action>
+
+"""
+
+COMBO_BELIEF_GRADING_4_NO_LOSS = """
+
+Your past environment feedback: <environment>"""
+
+COMBO_BELIEF_GRADING_5_LOSS = """{prior_obs}</environment>
+
+"""
 # possible characters in position 1: [3, 4, 5, 6, 7, 8, 9]\npossible characters in position 2: [1]\npossible characters in position 3: [3, 4, 5, 6, 7, 8, 9]
