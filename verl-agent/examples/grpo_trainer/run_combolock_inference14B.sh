@@ -14,16 +14,16 @@ if [ $SINGLE_CTX == True ]; then
     if [ $MULTI_MSG == False ]; then
         MAX_STEPS=$MAX_ATTEMPTS
     fi
-    MAX_PROMPT_LEN=16384
+    MAX_PROMPT_LEN=8096
     max_num_batched_tokens=$(($MAX_PROMPT_LEN * 2))
 else
-    MAX_PROMPT_LEN=2048
+    MAX_PROMPT_LEN=1024
     max_num_batched_tokens=8196
 fi
 # DSET=${DSET:-interaction_base_base}
 export VLLM_ATTENTION_BACKEND=XFORMERS
 
-train_data_size=${train_data_size:-256}
+train_data_size=${train_data_size:-126}
 GRADE_BELIEF=${GRADE_BELIEF:-0.0}
 STEP_RESUME=${STEP_RESUME:-100}
 FULL_HIST_BELIEF=${FULL_HIST_BELIEF:-False}
@@ -95,32 +95,34 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.path=$MODEL_NAME \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
-    actor_rollout_ref.actor.ppo_mini_batch_size=8 \
-    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=2 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=12 \
+    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.actor.use_kl_loss=True \
     actor_rollout_ref.actor.kl_loss_coef=0.01 \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
-    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=2 \
+    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.name=$ENGINE \
+    actor_rollout_ref.model.enable_activation_offload=True \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
-    actor_rollout_ref.rollout.enable_chunked_prefill=False \
+    actor_rollout_ref.rollout.enable_chunked_prefill=True \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
     actor_rollout_ref.rollout.val_kwargs.temperature=0.4 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
-    actor_rollout_ref.rollout.max_num_batched_tokens=$max_num_batched_tokens \
+    actor_rollout_ref.rollout.max_num_batched_tokens=$(($MAX_PROMPT_LEN + 1024)) \
     actor_rollout_ref.rollout.single_context=$SINGLE_CTX \
     actor_rollout_ref.rollout.belief_multiple_messages=$MULTI_MSG \
     actor_rollout_ref.rollout.temperature=$TEMPERATURE \
-    actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=2 \
+    actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=1 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.use_invalid_action_penalty=False \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.0 \
     actor_rollout_ref.actor.single_batch=True \
+    actor_rollout_ref.actor.optim.foreach=False \
     algorithm.use_kl_in_reward=False \
     env.env_name=combolock \
     env.seed=0 \
@@ -138,7 +140,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.resume_from_path=checkpoints/verl_agent_alfworld/grpo_qwen2.5_7b_16sfr${CKPT} \
     trainer.experiment_name=grpo_qwen2.5_7b_v_${VOCAB}_m_${MAX_ATTEMPTS}_ckpt_${CKPT}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}_inference \
     trainer.only_gen_once=True \
-    trainer.n_gpus_per_node=4 \
+    trainer.n_gpus_per_node=6 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
     trainer.test_freq=10000 \
