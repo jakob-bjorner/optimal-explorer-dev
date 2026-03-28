@@ -21,6 +21,7 @@ This trainer supports model-agonistic model initialization with huggingface
 import json
 import os
 import uuid
+import gc
 from collections import defaultdict
 from contextlib import contextmanager
 from copy import deepcopy
@@ -1031,6 +1032,9 @@ class RayPPOTrainer:
 
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
+                torch.cuda.empty_cache()
+                
+                gc.collect()
                 metrics = {}
                 timing_raw = {}
                 batch: DataProto = DataProto.from_single_dict(batch_dict)

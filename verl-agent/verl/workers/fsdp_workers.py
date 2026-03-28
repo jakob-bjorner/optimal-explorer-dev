@@ -360,6 +360,7 @@ class ActorRolloutRefWorker(Worker):
                 lr=optim_config.lr,
                 betas=optim_config.get("betas", (0.9, 0.999)),
                 weight_decay=optim_config.get("weight_decay", 1e-2),
+                foreach=optim_config.foreach,
             )
 
             total_steps = optim_config.get("total_training_steps", 0)
