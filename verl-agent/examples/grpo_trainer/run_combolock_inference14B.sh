@@ -54,8 +54,12 @@ python3 -m examples.data_preprocess.prepare \
 # data.val_files=/nas/ucb/jbjorner3/dev/optimal-explorer-dev/data/multi_turn_combo_lock_$DSET/train.parquet \
 
 # use this when you have some run you want to evaluate at a particular saved step. remove to evaluate from step 0 
-
 #   trainer.resume_from_path=checkpoints/verl_agent_alfworld/grpo_qwen2.5_7b_16sfr${CKPT} \ 
+if [ -z "${CKPT+x}" ]; then
+    RESUME_PATH=null
+else
+    RESUME_PATH=checkpoints/verl_agent_alfworld/grpo_qwen2.5_7b_16sfr${CKPT}
+fi
 # CKPT="_seed1/global_step_20" VOCAB='abcdefghij' bash examples/grpo_trainer/run_combolock_inference.sh
 # CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed1/global_step_40" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed1/global_step_60" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh;CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed1/global_step_80" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed1/global_step_100" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh
 # CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed1/global_step_120" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed1/global_step_140" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed2/global_step_20" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed2/global_step_40" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed2/global_step_60" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh;CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed2/global_step_80" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed2/global_step_100" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed2/global_step_120" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; CUDA_VISIBLE_DEVICES="4,5,6,7" CKPT="_seed2/global_step_140" MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh
@@ -137,7 +141,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_agent_alfworld' \
-    trainer.resume_from_path=checkpoints/verl_agent_alfworld/grpo_qwen2.5_7b_16sfr${CKPT} \
+    trainer.resume_from_path=$RESUME_PATH \
     trainer.experiment_name=grpo_qwen2.5_7b_v_${VOCAB}_m_${MAX_ATTEMPTS}_ckpt_${CKPT}_sc_${SINGLE_CTX}_belief_prompting_${MULTI_MSG}_inference \
     trainer.only_gen_once=True \
     trainer.n_gpus_per_node=6 \
