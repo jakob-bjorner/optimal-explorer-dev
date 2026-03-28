@@ -21,7 +21,8 @@ GRADE_BELIEF=${GRADE_BELIEF:-0.0}
 FULL_HIST_BELIEF=${FULL_HIST_BELIEF:-False}
 GRADE_BELIEF_TYPE=${GRADE_BELIEF_TYPE:-0}
 MODEL_NAME=${MODEL_NAME:-"qwen/qwen2.5-${B}b-instruct"}
-
+BG_CEIL_RWD=${BG_CEIL_RWD:--0.8}
+KL_LOSS_COEF=${KL_LOSS_COEF:-0.01}
 # invalid_action_penalty_coef=0.0
 # also their kl is 0.01 lol.
 # Need to change the max_prompt_len hyper param for real run. ahh its probably ok actually.
@@ -64,9 +65,10 @@ python3 -m examples.data_preprocess.prepare \
 # have we even trained something in this environment? What do we have going in this setting?
 # lets do a 3 b model for testing, and have belief states generated. 
 # B=3 train_data_size=4 GRADE_BELIEF=1.0 DEBUG=combolock_vs_r1_test bash examples/grpo_trainer/run_combolock.sh
-# B=7 train_data_size=16 SEED=3 GRADE_BELIEF=2.0 DEBUG=combolock_vs_r1_new_parse5 bash examples/grpo_trainer/run_combolock.sh
+# B=7 train_data_size=16 SEED=3 GRADE_BELIEF=2.0 DEBUG=combolock_vs_r1_new_parse5 bash examples/grpo_trainer/run_combolock.shI
 # B=7 train_data_size=16 SEED=3 SINGLE_CTX=True MULTI_MSG=False DEBUG=combolock_vanilla bash examples/grpo_trainer/run_combolock.sh; B=7 train_data_size=16 SEED=3 SINGLE_CTX=True MULTI_MSG=True DEBUG=combolock_belief_prompting bash examples/grpo_trainer/run_combolock.sh
-# B=7 train_data_size=16 SEED=1 FULL_HIST_BELIEF=True MAX_PROMPT_LEN=4096 DEBUG=combolock_full_history bash examples/grpo_trainer/run_combolock.sh;
+# B=7 train_data_size=16 SEED=1 FULL_HIST_BELIEF=True MAX_PROMPT_LEN=4096 DEBUG=combolock_full_history bash examples/grpo_trainer/run_combolock.sh
+# B=7 train_data_size=16 SEED=1 GRADE_BELIEF_TYPE=1 BG_CEIL_RWD=-1 GRADE_BELIEF=5.0 DEBUG=combolock_bg_log_obs_kl bash examples/grpo_trainer/run_combolock.sh; B=7 STEP_RESUME=20  CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_kl/global_step_20" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=40 CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_kl/global_step_40" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=60 CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_kl/global_step_60" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=80 CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_kl/global_step_80" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=100 CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_kl/global_step_100" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=120 CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_kl/global_step_120" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=140 CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_kl/global_step_140" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -85,7 +87,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.ppo_mini_batch_size=16 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.actor.use_kl_loss=True \
-    actor_rollout_ref.actor.kl_loss_coef=0.01 \
+    actor_rollout_ref.actor.kl_loss_coef=$KL_LOSS_COEF \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
@@ -117,6 +119,7 @@ python3 -m verl.trainer.main_ppo \
     +env.max_attempts=12 \
     +env.full_history_belief=$FULL_HIST_BELIEF \
     env.rollout.n=$group_size \
+    +trainer.ceiling_belief_grading_reward=$BG_CEIL_RWD \
     +trainer.belief_state_grading_type=$GRADE_BELIEF_TYPE \
     trainer.belief_state_grading=$GRADE_BELIEF \
     trainer.critic_warmup=0 \

@@ -943,10 +943,10 @@ class TrajectoryCollector:
                         
                         for c in all_belief_contexts:
                             if c['is_action_valid']:
-                                true_prior_obs = extract("environment", c['input_ids_str'])
-                                true_prior_belief = extract("belief", c['input_ids_str'])
-                                true_prior_action = extract("action", c['input_ids_str'])
                                 if self.config.env.env_name == "combolock":
+                                    true_prior_obs = c['input_ids_str'].split("Environment feedback:")[1].split("Now update your belief")[0].strip()
+                                    true_prior_belief = extract("belief", c['input_ids_str'])
+                                    true_prior_action = extract("action", c['input_ids_str'])
                                     prompt_parts=[
                                         COMBO_BELIEF_GRADING_0_NO_LOSS.format(future_belief=c['filtered_belief_generations']),
                                         COMBO_BELIEF_GRADING_1_LOSS.format(prior_belief=true_prior_belief), 
@@ -956,6 +956,9 @@ class TrajectoryCollector:
                                         COMBO_BELIEF_GRADING_5_LOSS.format(prior_obs=true_prior_obs)
                                     ]
                                 else:
+                                    true_prior_obs = extract("environment", c['input_ids_str'])
+                                    true_prior_belief = extract("belief", c['input_ids_str'])
+                                    true_prior_action = extract("action", c['input_ids_str'])
                                     prompt_parts=[
                                         COLABBENCH_BELIEF_GRADING_0_NO_LOSS.format(future_belief=c['filtered_belief_generations'], first_user_query=c['info']['problem_description']),
                                         COLABBENCH_BELIEF_GRADING_1_LOSS.format(prior_belief=true_prior_belief), 
