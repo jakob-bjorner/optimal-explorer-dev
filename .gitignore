@@ -187,3 +187,4 @@ outputs/
 unsloth_compiled_cache/
 wordle_*.jsonl
 checkpoints
+*.pkl
