@@ -787,7 +787,7 @@ class TrajectoryCollector:
                 all_belief_contexts = flattened_valid_belief_contexts + new_belief_contexts
                 for c in all_belief_contexts:
                     c['info'].update({"is_belief_grading_context": True})
-                if self.config.env.env_name == "combolock" and self.config.trainer.belief_state_grading_type == 0:
+                if self.config.env.env_name == "combolock" and self.config.trainer.belief_state_grading_type < 0:
                     from agent_system.environments.prompts.combolock import COMBO_BELIEF_GRADING_PROMPT, COMBO_BELIEF_GRADING_PROMPT_FILLER_BELIEF
                     grading_prompts = [COMBO_BELIEF_GRADING_PROMPT.format(belief=c['filtered_belief_generations']) if c['is_action_valid'] else "" for c in all_belief_contexts] 
                     # I decide not to filter out the invalids here, and just grade everything because its less book keeping. shouldn't be too bad when the code is working well. < 1/6 beliefs seem to fail.
@@ -907,7 +907,7 @@ class TrajectoryCollector:
                     episode_lengths = np.array(new_episode_lengths)
                     traj_uid = np.array(new_traj_uid)
                     success['fraction_parsable_belief_states_success_rate'] = np.array([parsable_belief_states] * len(primary_belief_contexts)) / len(primary_belief_contexts)
-                elif self.config.env.env_name == "colabbench" or (self.config.env.env_name == "combolock" and self.config.trainer.belief_state_grading_type != 0):
+                elif self.config.env.env_name == "colabbench" or (self.config.env.env_name == "combolock" and self.config.trainer.belief_state_grading_type >= 0):
                     if self.config.trainer.belief_state_grading_type >= 0:
 
                         # possibilities to try for rebuttal:
@@ -1009,7 +1009,7 @@ class TrajectoryCollector:
                         log_prob_prior_info_given_future_belief = actor_rollout_wg.compute_log_prob(input_for_belief_grading).batch['old_log_probs']
                         # some implementations of the log_prob don't work with the -100 labels, so actually I have to post process the log_probs.
                         log_prob_prior_info_given_future_belief[labels[:, 1:] == -100] = 0.0
-                        belief_grades = log_prob_prior_info_given_future_belief.sum(-1) / 64 # (labels[:, 1:] != -100).sum(-1) 
+                        belief_grades = log_prob_prior_info_given_future_belief.sum(-1) / (64 if self.config.trainer.div_by_const else (labels[:, 1:] != -100).sum(-1) )
                         belief_grade_token_mask = belief_grades.isnan()
                         belief_grades[belief_grade_token_mask] = -5 # this is just empty seq, so shouldn't matter what value I set it to. doing -10 for safety tho.
 
@@ -1056,6 +1056,9 @@ class TrajectoryCollector:
                         while i < len(primary_belief_contexts):
                             primary_belief_context = primary_belief_contexts[i]
                             secondary_belief_context = secondary_belief_contexts[i]
+                            if "invalid" in extract("action", primary_belief_context['input_ids_str']):
+                                i += 1
+                                continue
                             primary_reward = primary_belief_context['info']['belief_grade']
                             secondary_reward = -5.0 if not secondary_belief_context['is_action_valid'] else secondary_belief_context['info']['belief_grade']
 
@@ -1081,11 +1084,18 @@ class TrajectoryCollector:
                             # primary_reward = primary_phi
                             # secondary_reward = secondary_phi
 
+                            # I want to bound the advantage that I will apply after GRPO without normalization is applied. for these two rewards, I'll find their mean and subtract it, so I just need to ensure they are less than 0.7 away from their mean, otherwise, I'll clip them
+                            # a_p = p - (p + s) / 2, well this can be done by finding their distance, then adding to the smaller one double the difference above 0.7 that the mean difference is.
+                            if primary_reward < secondary_reward:
+                                primary_reward += max(0, abs((primary_reward-secondary_reward)/2)-0.7/5) * 2
+                            else:
+                                secondary_reward += max(0, abs((primary_reward-secondary_reward)/2)-0.7/5) * 2
+
+
                             advantage_magnitude_list.extend([abs((primary_reward - secondary_reward)/2) * self.config.trainer.belief_state_grading])
                             primary_belief_context['rewards'] = primary_reward
                             secondary_belief_context['rewards'] = secondary_reward
 
-                            
                             new_total_batch_list.extend([[primary_belief_context], [secondary_belief_context]])
                             new_episode_rewards.extend([primary_reward, secondary_reward])
                             new_episode_lengths.extend([1, 1])
@@ -1095,16 +1105,23 @@ class TrajectoryCollector:
                                     avg = avg - 20 # we will penalize both a bit if they are equal? this to discourage a deterministic belief generation which just copies the inputs directly.
                                 # I only want to apply the penalty to things larger than 100, if the length degenerates to 0, I don't want this to be rewarded. This is very bad.
                                 # so if both are larger than 100, then I do this calculation, which will favor the shorter of the two.
-                                if primary_belief_context["filtered_belief_generations_len"] > 400 and secondary_belief_context["filtered_belief_generations_len"] > 400:
-                                    new_episode_penalties.extend([primary_belief_context["filtered_belief_generations_len"]-avg, secondary_belief_context["filtered_belief_generations_len"]-avg])
+                                if self.config.env.env_name == "combolock":
+                                    if primary_belief_context["filtered_belief_generations_len"] > 200 and secondary_belief_context["filtered_belief_generations_len"] > 200:
+                                        new_episode_penalties.extend([min(max(primary_belief_context["filtered_belief_generations_len"]-avg, -70), 70), 
+                                                                      min(max(secondary_belief_context["filtered_belief_generations_len"]-avg, -70), 70)])
+                                    else: 
+                                        new_episode_penalties.extend([0, 0])
                                 else:
-                                    new_episode_penalties.extend([0, 0])
+                                    if primary_belief_context["filtered_belief_generations_len"] > 400 and secondary_belief_context["filtered_belief_generations_len"] > 400:
+                                        new_episode_penalties.extend([primary_belief_context["filtered_belief_generations_len"]-avg, secondary_belief_context["filtered_belief_generations_len"]-avg])
+                                    else:
+                                        new_episode_penalties.extend([0, 0])
 
                             else:
                                 new_episode_penalties.extend([0,0])
 
                             new_traj_uid.extend([primary_traj_uid, secondary_traj_uid]) 
-                            if og_primary_reward < -1.4: # very heuristic guess. 
+                            if og_primary_reward < (-1.4 if self.config.trainer.div_by_const else -1.6): # very heuristic guess. 
                                 # we skip the rest of the trajectory. 
                                 while i < len(primary_belief_contexts) and primary_belief_contexts[i]['info']["parent_traj_uid"] == primary_belief_context['info']["parent_traj_uid"]:
                                     i += 1
@@ -1135,7 +1152,7 @@ class TrajectoryCollector:
                         # because the scope is small, will just add the completion into infos's dict, if I want to see it for any reason.
                         from agent_system.environments.prompts.colabbench import COLABBENCH_ACTION_PROMPT, COLABBENCH_AGENT_FIRST_MESSAGE
                         parent_uid_to_task_desciption = {uid_i: envs.task_desciptions[i] for i, uid_i in enumerate(uid_batch)}
-                        action_prompt_chats = [] 
+                        action_prompt_chats = []
                         # why don't I just add the belief action to the trajectory reward again? I could even add it independantly of the belief grading? 
                         # Well, this would be pretty far removed from belief grading's impact on the performance, but should be something that someone does if they just wanted higher performance.
                         for belief_context_dict in all_belief_contexts:
@@ -1269,7 +1286,7 @@ class TrajectoryCollector:
 
 
 
-                    
+
 
                     # then just attribute the rewards to the right spot. 
                     # (issue will be that the action generations are so many, 
