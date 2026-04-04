@@ -5,7 +5,6 @@ TEMPERATURE=${TEMPERATURE:-1.0}
 VOCAB=${VOCAB:-0123456789}
 MAX_ATTEMPTS=${MAX_ATTEMPTS:-12}
 MAX_STEPS=$(($MAX_ATTEMPTS * 2))
-CKPT=${CKPT:-} # one command per checkpoint.
 SINGLE_CTX=${SINGLE_CTX:-False}
 MULTI_MSG=${MULTI_MSG:-True}
 
@@ -31,7 +30,7 @@ GRADE_BELIEF_TYPE=${GRADE_BELIEF_TYPE:-0}
 MODEL_NAME=${MODEL_NAME:-"qwen/qwen2.5-${B}b-instruct"}
 # 16 for training
 # minbatch should be 8 on 4 gpus. and 16 on 8 gpus to match the micro per gpu assert.
-val_data_size=8
+val_data_size=6
 group_size=2
 # invalid_action_penalty_coef=0.0
 # also their kl is 0.01 lol.

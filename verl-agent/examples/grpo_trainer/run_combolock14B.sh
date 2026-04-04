@@ -14,9 +14,9 @@ else
 fi
 
 train_data_size=${train_data_size:-18}
-val_data_size=8
+val_data_size=6
 group_size=2
-B=${B:-7}
+B=${B:-14}
 GRADE_BELIEF=${GRADE_BELIEF:-0.0}
 FULL_HIST_BELIEF=${FULL_HIST_BELIEF:-False}
 GRADE_BELIEF_TYPE=${GRADE_BELIEF_TYPE:-0}
@@ -120,6 +120,7 @@ python3 -m verl.trainer.main_ppo \
     +env.max_attempts=12 \
     +env.full_history_belief=$FULL_HIST_BELIEF \
     env.rollout.n=$group_size \
+    +trainer.ceiling_belief_grading_reward=$BG_CEIL_RWD \
     +trainer.belief_state_grading_type=$GRADE_BELIEF_TYPE \
     trainer.belief_state_grading=$GRADE_BELIEF \
     trainer.critic_warmup=0 \
