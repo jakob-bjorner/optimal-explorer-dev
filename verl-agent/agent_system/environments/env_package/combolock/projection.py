@@ -22,13 +22,15 @@ def combolock_projection(actions: List[str], generate_belief: List[bool], vocab)
         if generate_belief[i]:
             start_tag = '<belief>'
             end_tag = '</belief>'
+            # other_start_tag = "<action>"
+            # other_end_tag = "<action>"
         else:
             start_tag = "<action>"
             end_tag = "</action>"
         start_idx = actions[i].find(start_tag)
         end_idx = actions[i].find(end_tag)
         try:
-            if start_idx == -1 or end_idx == -1:
+            if start_idx == -1 or end_idx == -1 or actions[i].lower().count(start_tag) > 1 or actions[i].lower().count(end_tag) > 1:
                 # If we can't find a valid <action>...</action> block, mark as invalid
                 actions[i] = actions[i][-30:]  
                 continue

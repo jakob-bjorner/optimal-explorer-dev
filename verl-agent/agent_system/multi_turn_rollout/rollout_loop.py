@@ -740,7 +740,7 @@ class TrajectoryCollector:
         # here
         # generate a pair for each, re label the traj_uid
         if self.config.trainer.belief_state_grading:
-            flattened_valid_belief_contexts = [c for trajectory in total_batch_list for c in trajectory if (c['active_masks'] and c['info']["is_action_valid"] and c['info']["action_or_belief"] and "Belief generation failed to parse" not in c['input_ids_str'])] 
+            flattened_valid_belief_contexts = [c for trajectory in total_batch_list for c in trajectory if (c['active_masks'] and c['info']["is_action_valid"] and c['info']["action_or_belief"] and ("Belief generation failed to parse" not in c['input_ids_str']))] #  and ("<action>invalid action</action>" not in c['input_ids_str'])
             # technically we don't have to filter on the successful beliefs, but lets do this for now.
             if len(flattened_valid_belief_contexts) >= batch_size:
                 # we want to create a deepcopy of the full set of valid beleif contexts, then remove unnecessary info, and populate with new traj_uid and uid info and reshuffle into total_batch_list format.
@@ -787,7 +787,7 @@ class TrajectoryCollector:
                 all_belief_contexts = flattened_valid_belief_contexts + new_belief_contexts
                 for c in all_belief_contexts:
                     c['info'].update({"is_belief_grading_context": True})
-                if self.config.env.env_name == "combolock" and self.config.trainer.belief_state_grading_type < 0:
+                if self.config.env.env_name == "combolock" and self.config.trainer.belief_state_grading_type == -1:
                     from agent_system.environments.prompts.combolock import COMBO_BELIEF_GRADING_PROMPT, COMBO_BELIEF_GRADING_PROMPT_FILLER_BELIEF
                     grading_prompts = [COMBO_BELIEF_GRADING_PROMPT.format(belief=c['filtered_belief_generations']) if c['is_action_valid'] else "" for c in all_belief_contexts] 
                     # I decide not to filter out the invalids here, and just grade everything because its less book keeping. shouldn't be too bad when the code is working well. < 1/6 beliefs seem to fail.
@@ -907,7 +907,7 @@ class TrajectoryCollector:
                     episode_lengths = np.array(new_episode_lengths)
                     traj_uid = np.array(new_traj_uid)
                     success['fraction_parsable_belief_states_success_rate'] = np.array([parsable_belief_states] * len(primary_belief_contexts)) / len(primary_belief_contexts)
-                elif self.config.env.env_name == "colabbench" or (self.config.env.env_name == "combolock" and self.config.trainer.belief_state_grading_type >= 0):
+                elif self.config.env.env_name == "colabbench" or self.config.env.env_name == "combolock":
                     if self.config.trainer.belief_state_grading_type >= 0:
 
                         # possibilities to try for rebuttal:
@@ -955,7 +955,7 @@ class TrajectoryCollector:
                                         COMBO_BELIEF_GRADING_4_NO_LOSS, 
                                         COMBO_BELIEF_GRADING_5_LOSS.format(prior_obs=true_prior_obs)
                                     ]
-                                else:
+                                elif self.config.env.env_name == "colabbench":
                                     true_prior_obs = extract("environment", c['input_ids_str'])
                                     true_prior_belief = extract("belief", c['input_ids_str'])
                                     true_prior_action = extract("action", c['input_ids_str'])
@@ -967,7 +967,8 @@ class TrajectoryCollector:
                                         COLABBENCH_BELIEF_GRADING_4_NO_LOSS, 
                                         COLABBENCH_BELIEF_GRADING_5_LOSS.format(prior_obs=true_prior_obs)
                                     ]
-                                
+                                else:
+                                    raise Exception("invalid environment name", self.env.env_name)
                                 if int(self.config.trainer.belief_state_grading_type) == 0:
                                     record_prob_for_parts=[0,1,0,1,0,1]
                                 elif int(self.config.trainer.belief_state_grading_type) == 1:
@@ -1016,6 +1017,7 @@ class TrajectoryCollector:
                         
 
                         for c, belief_grade in zip(all_belief_contexts, belief_grades):
+                            c["info"]['raw_grade'] = belief_grade.item()
                             belief_grade = min(belief_grade.item(), self.config.trainer.ceiling_belief_grading_reward)
                             belief_grade = max(belief_grade, -5) # -5 is a guess at the rough poorest performance we can expect.
                             c['info']['belief_grade'] = belief_grade
@@ -1056,7 +1058,7 @@ class TrajectoryCollector:
                         while i < len(primary_belief_contexts):
                             primary_belief_context = primary_belief_contexts[i]
                             secondary_belief_context = secondary_belief_contexts[i]
-                            if "invalid" in extract("action", primary_belief_context['input_ids_str']):
+                            if "Your last action:\n<action>invalid action</action>" in primary_belief_context['input_ids_str']:
                                 i += 1
                                 continue
                             primary_reward = primary_belief_context['info']['belief_grade']
@@ -1086,10 +1088,11 @@ class TrajectoryCollector:
 
                             # I want to bound the advantage that I will apply after GRPO without normalization is applied. for these two rewards, I'll find their mean and subtract it, so I just need to ensure they are less than 0.7 away from their mean, otherwise, I'll clip them
                             # a_p = p - (p + s) / 2, well this can be done by finding their distance, then adding to the smaller one double the difference above 0.7 that the mean difference is.
+
                             if primary_reward < secondary_reward:
-                                primary_reward += max(0, abs((primary_reward-secondary_reward)/2)-0.7/5) * 2
+                                primary_reward += max(0, abs((primary_reward-secondary_reward)/2)-self.config.trainer.get("belief_grade_mag_cutoff", 0.7/5)) * 2
                             else:
-                                secondary_reward += max(0, abs((primary_reward-secondary_reward)/2)-0.7/5) * 2
+                                secondary_reward += max(0, abs((primary_reward-secondary_reward)/2)-self.config.trainer.get("belief_grade_mag_cutoff", 0.7/5)) * 2
 
 
                             advantage_magnitude_list.extend([abs((primary_reward - secondary_reward)/2) * self.config.trainer.belief_state_grading])
@@ -1121,7 +1124,7 @@ class TrajectoryCollector:
                                 new_episode_penalties.extend([0,0])
 
                             new_traj_uid.extend([primary_traj_uid, secondary_traj_uid]) 
-                            if og_primary_reward < (-1.4 if self.config.trainer.div_by_const else -1.6): # very heuristic guess. 
+                            if og_primary_reward < (self.config.trainer.get("theshold_next_belief_grade", -1.4) if self.config.trainer.div_by_const else -1.6): # very heuristic guess. 
                                 # we skip the rest of the trajectory. 
                                 while i < len(primary_belief_contexts) and primary_belief_contexts[i]['info']["parent_traj_uid"] == primary_belief_context['info']["parent_traj_uid"]:
                                     i += 1
@@ -1141,7 +1144,7 @@ class TrajectoryCollector:
                         # (1) reconstruction of true answer with belief state, and 
                         # (2) correct answer generation with belief state. 
                         # Below will be (2), and above will be (1), because its already pretty supported in the existing implementation.
-                    else:
+                    elif self.config.env.env_name == "colabbench" and self.config.trainer.belief_state_grading_type==-1:
                         # need to generate actions, and do the environment rollout, 
                         # but ask the step function to get the scores for the actions
                         # implicitly this should also prompt the model to respond in its action, 
@@ -1283,7 +1286,107 @@ class TrajectoryCollector:
                             # Might not actually be so important, depends on compute/data constraints.
                             belief_states_graded_in_chain += 1
                             i += 1
+                    elif self.config.env.env_name == "combolock" and (self.config.trainer.belief_state_grading_type==-2 or self.config.trainer.belief_state_grading_type==-3):
+                        # -2 grade beliefs with only how long they are
+                        # -3 grade beliefs with only how correct/parsable they are.
+                        # breakpoint()
+                        def is_valid_belief_strict(s):
+                            if "<belief>" in s and "</belief>" in s.split("<belief>")[1]:# this is technically more strict than the projection for combolock, but I think this is good for the grader. # in "<belief>".join(s.split("<belief>")[1:]):
+                                return True
+                            return False
+                        belief_grades = []
+                        for c in all_belief_contexts:
+                            if self.config.trainer.belief_state_grading_type==-2:
+                                # raise NotImplemented
+                                belief_grade = -abs(min((c['info']['current_attempt']) * 30, 200) - int(c['filtered_belief_generations_len']))
+                                bad_belief_grade = -100
+                            else:
+                                # belief state grading type -3
+                                assert self.config.trainer.belief_state_grading_type==-3
+                                bad_belief_grade = 0
+                                belief_grade = int(is_valid_belief_strict(c["response_ids_str"]))
+                            c["info"]['raw_grade'] = belief_grade
+                            belief_grades.append(belief_grade)
+                            # if self.config.trainer.belief_state_grading_type==-2:
+                            #     belief_grade = min(belief_grade, 70) # I would really want to bound the advantage in this way instead.
+                            #     belief_grade = max(belief_grade, -70)
+                            c['info']['belief_grade'] = belief_grade
+                        belief_grades = np.array(belief_grades)
+                        belief_grade_token_mask = np.isnan(belief_grades)
 
+                        primary_belief_contexts, secondary_belief_contexts = all_belief_contexts[:len(flattened_valid_belief_contexts)], all_belief_contexts[len(flattened_valid_belief_contexts):]
+                        new_total_batch_list = copy(total_batch_list)
+                        new_episode_rewards = episode_rewards.tolist()
+                        new_episode_lengths = episode_lengths.tolist()
+                        # if you have penalties enabled for belief lengths, you shouldn't have them enabled for overall episode length. This encourages very short trajectories.
+                        new_episode_penalties = np.zeros_like(episode_penalties).tolist()
+                        new_traj_uid = traj_uid.tolist()
+                        i = 0
+                        belief_states_graded_in_chain = 0
+                        log_obs_list = list()
+                        advantage_magnitude_list = list()
+                        def extract(tag, s):
+                            return s.split(f"<{tag}>")[1].split(f"</{tag}>")[0]
+                        while i < len(primary_belief_contexts):
+                            primary_belief_context = primary_belief_contexts[i]
+                            secondary_belief_context = secondary_belief_contexts[i]
+                            if "Your last action:\n<action>invalid action</action>" in primary_belief_context['input_ids_str']:
+                                i += 1 # especially important to ignore invalid beliefs in the length rewarding setting because some lengths can be 0. due to first action gen failures.
+                                continue
+                            primary_reward = primary_belief_context['info']['belief_grade']
+                            secondary_reward = bad_belief_grade if not secondary_belief_context['is_action_valid'] else secondary_belief_context['info']['belief_grade']
+
+                            primary_traj_uid = str(uuid.uuid4())
+                            secondary_traj_uid = str(uuid.uuid4())
+
+                            primary_belief_context['traj_uid'] = primary_traj_uid
+                            secondary_belief_context['traj_uid'] = secondary_traj_uid
+                            
+                            # update the primary and secondary_reward here if they are more than the prior maxes.
+                            assert primary_belief_context['info']["parent_uid"] == secondary_belief_context['info']["parent_uid"]
+                            log_obs_list.extend([primary_reward, secondary_reward])
+                            og_primary_reward = primary_reward
+                            if self.config.trainer.belief_state_grading_type==-2:
+                                if primary_reward < secondary_reward:
+                                    primary_reward += max(0, abs((primary_reward-secondary_reward)/2)-self.config.trainer.get("belief_grade_mag_cutoff", 70)) * 2
+                                else:
+                                    secondary_reward += max(0, abs((primary_reward-secondary_reward)/2)-self.config.trainer.get("belief_grade_mag_cutoff", 70)) * 2
+
+
+                            advantage_magnitude_list.extend([abs((primary_reward - secondary_reward)/2) * self.config.trainer.belief_state_grading])
+                            primary_belief_context['rewards'] = primary_reward
+                            secondary_belief_context['rewards'] = secondary_reward
+
+                            new_total_batch_list.extend([[primary_belief_context], [secondary_belief_context]])
+                            new_episode_rewards.extend([primary_reward, secondary_reward])
+                            new_episode_lengths.extend([1, 1])
+                            if secondary_belief_context['is_action_valid']:
+                                avg = (primary_belief_context["filtered_belief_generations_len"] + secondary_belief_context["filtered_belief_generations_len"]) / 2
+                                if primary_belief_context["filtered_belief_generations_len"] == secondary_belief_context["filtered_belief_generations_len"]:
+                                    avg = avg - 20 # we will penalize both a bit if they are equal? this to discourage a deterministic belief generation which just copies the inputs directly.
+                                # I only want to apply the penalty to things larger than 100, if the length degenerates to 0, I don't want this to be rewarded. This is very bad.
+                                # so if both are larger than 100, then I do this calculation, which will favor the shorter of the two.
+                                if self.config.env.env_name == "combolock":
+                                    if primary_belief_context["filtered_belief_generations_len"] > 200 and secondary_belief_context["filtered_belief_generations_len"] > 200:
+                                        new_episode_penalties.extend([min(max(primary_belief_context["filtered_belief_generations_len"]-avg, -70), 70), 
+                                                                      min(max(secondary_belief_context["filtered_belief_generations_len"]-avg, -70), 70)])
+                                    else: 
+                                        new_episode_penalties.extend([0, 0])
+                                else:
+                                    if primary_belief_context["filtered_belief_generations_len"] > 400 and secondary_belief_context["filtered_belief_generations_len"] > 400:
+                                        new_episode_penalties.extend([primary_belief_context["filtered_belief_generations_len"]-avg, secondary_belief_context["filtered_belief_generations_len"]-avg])
+                                    else:
+                                        new_episode_penalties.extend([0, 0])
+
+                            else:
+                                new_episode_penalties.extend([0,0])
+
+                            new_traj_uid.extend([primary_traj_uid, secondary_traj_uid]) 
+                            i += 1
+                        success['belief_grade_advantage_magnitude_mean_success_rate'] = np.array([np.array(advantage_magnitude_list).mean().item()] * len(primary_belief_contexts))
+                        success['belief_grade_log_obs_mean_success_rate'] = np.array([np.array(log_obs_list).mean().item()] * len(primary_belief_contexts))
+                    else:
+                        raise Exception("invalid config", self.config.env.env_name, self.config.trainer.belief_state_grading_type)
 
 
 

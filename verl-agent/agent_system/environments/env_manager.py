@@ -719,7 +719,7 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
 
         return {key: np.array(value) for key, value in success.items()} | {"action_generation_failures_success_rate": np.array([self.action_generation_failures/batch_size]*batch_size), 
                                                                            "belief_generation_failures_success_rate": np.array([self.belief_generation_failures/batch_size]*batch_size),
-                                                                           "regret_tail_value_success_rate": np.array([regret_tail_value/ batch_size]*batch_size),} # just for the metric calc to be the same.
+                                                                           "regret_tail_value_success_rate": np.array([regret_tail_value]*batch_size),} # just for the metric calc to be the same.
 
 
 
