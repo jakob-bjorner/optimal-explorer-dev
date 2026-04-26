@@ -740,7 +740,7 @@ class TrajectoryCollector:
         # here
         # generate a pair for each, re label the traj_uid
         if self.config.trainer.belief_state_grading:
-            flattened_valid_belief_contexts = [c for trajectory in total_batch_list for c in trajectory if (c['active_masks'] and c['info']["is_action_valid"] and c['info']["action_or_belief"])]
+            flattened_valid_belief_contexts = [c for trajectory in total_batch_list for c in trajectory if (c['active_masks'] and c['info']["is_action_valid"] and c['info']["action_or_belief"] and "Belief generation failed to parse" not in c['input_ids_str'])] 
             # technically we don't have to filter on the successful beliefs, but lets do this for now.
             if len(flattened_valid_belief_contexts) >= batch_size:
                 # we want to create a deepcopy of the full set of valid beleif contexts, then remove unnecessary info, and populate with new traj_uid and uid info and reshuffle into total_batch_list format.
