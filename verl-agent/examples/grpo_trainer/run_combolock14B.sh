@@ -133,5 +133,5 @@ python3 -m verl.trainer.main_ppo \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
     trainer.test_freq=10000 \
-    trainer.total_epochs=141 \
+    trainer.total_epochs=140 \
     trainer.val_before_train=False $@
