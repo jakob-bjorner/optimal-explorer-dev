@@ -172,6 +172,9 @@ if [ -z "${CKPT+x}" ]; then
 else
     RESUME_PATH=checkpoints/verl_agent_alfworld/nqhotpotqa_grpo_${CKPT}
 fi
+
+RESUME_PATH=${RESUME_PATH_OVERRIDE:-$RESUME_PATH}
+
 ADDITIONAL_STEPS=${ADDITIONAL_STEPS:-14}
 
 python3 -m verl.trainer.main_ppo \
