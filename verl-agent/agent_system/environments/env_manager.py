@@ -663,7 +663,16 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
                         self.prior_beliefs[i] = belief
                         postprocess_text_obs.append(new_action_messages)
                     elif self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
-                        env_response = text_obs[i]
+                        if not valids[i]:
+                            if "<action>" in full_text_actions[i] and "</action>" in full_text_actions[i].split("<action>")[1]:
+                                # this has a different error message than the other one. lol.
+                                content_summary = full_text_actions[i] if len(full_text_actions[i]) < 20 else f"...{full_text_actions[i][-20:]}"
+                                env_response = f"Could not parse valid guess from: '{content_summary}'. Please ensure the guess is contained in the final characters of your response, and using only use the characters from the vocab in your guess characters. Do not repeat characters in your guess."
+                            else:
+                                # so we don't have the tags correct in this one.
+                                env_response = 'Could not parse response. Please ensure your response is in the format: <action> ... </action>.'
+                        else:
+                            env_response = text_obs[i]
                         new_action_messages = [{'role': "user", 'content': env_response}]
                         postprocess_text_obs.append(new_action_messages)
                     else:

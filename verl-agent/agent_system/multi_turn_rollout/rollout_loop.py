@@ -24,7 +24,7 @@ import uuid
 from verl.models.transformers.qwen2_vl import get_rope_index
 from agent_system.multi_turn_rollout.utils import process_image, to_list_of_dict, torch_to_numpy, filter_group_data
 from agent_system.environments import EnvironmentManagerBase
-from typing import List, Dict
+from typing import List, Dict, Any
 from torch.nn.utils.rnn import pad_sequence
 import tensordict as td
 from copy import deepcopy, copy
@@ -401,16 +401,23 @@ class TrajectoryCollector:
             def add_assistant_message(
                 index: int,
                 content_str: str,
-                content_ids: list[int],
+                content_ids: list[int] = None,
                 should_add_loss_mask: bool = True,
+                extended_content_definition: dict[str, Any] = None,
             ) -> None:
-                content_str = content_str.replace("<|im_end|>", "")
+                content_str = content_str.replace("<|im_end|>", "") # in fact, all of this might be hyper specific to qwen models.? we shouldn't expect llama to work?
                 messages_list[index].append(dict(role="assistant", content=content_str))
-                _update_input_ids(content_ids, index, should_add_loss_mask=should_add_loss_mask)
+                if extended_content_definition is not None:
+                    assert content_ids is None
+                    assert len(extended_content_definition['content_ids']) == len(extended_content_definition['should_add_loss_mask'])
+                    for content_ids, should_add_loss_mask in zip(extended_content_definition['content_ids'], extended_content_definition['should_add_loss_mask']):
+                        _update_input_ids(content_ids, index, should_add_loss_mask=should_add_loss_mask)
+                else:
+                    _update_input_ids(content_ids, index, should_add_loss_mask=should_add_loss_mask)
                 if content_ids[-1] != self.tokenizer.encode("<|im_end|>", add_special_tokens=False)[0]:
                     _update_input_ids(self.tokenizer.encode("<|im_end|>", add_special_tokens=False), index, should_add_loss_mask=False)
 
-                _update_input_ids(self.tokenizer.encode("\n", add_special_tokens=False), index, should_add_loss_mask=False)
+                _update_input_ids(self.tokenizer.encode("\n", add_special_tokens=False), index, should_add_loss_mask=False) # this may be hyper specific to qwen chat templates...?
             def add_user_messages(
                 index: int,
                 new_messages: list[dict[str, str]], 
@@ -472,6 +479,51 @@ class TrajectoryCollector:
                 batch = batch_input.union(batch_output)
 
                 text_actions = self.tokenizer.batch_decode(batch.batch['responses'], skip_special_tokens=True)
+                # should detect here if the model is a reasoning model and if the reasoning didn't finish, 
+                # and if the model should be prompted again with the content reformatted so that it can finish its reasoning.
+
+                extended_content_definitions = None
+                if "qwen3" in self.config.actor_rollout_ref.model.path.lower():#self.config.actor_rollout_ref.actor.tuncate_thinking_model:
+                    extended_content_definitions = []
+                    ... # detect if there is only a thinking start, and no thinking end, and if this is true, we should append something that depends on the model we are trying. 
+                    qwen3_terminating_str = "Considering the limited time by the user, I have to give the solution based on the thinking directly now.\n</think>.\n\n"
+                    terminate_thinking_gen_idxs = []
+                    terminate_thinking_gen_ids = []
+                    terminate_thinking_gen_masks = []
+                    terminate_input_ids: list[int] = self.tokenizer.encode(qwen3_terminating_str, add_special_tokens=True)
+                    response_len = len(batch.batch['responses'][0])
+                    for i in range(len(text_actions)):
+                        if is_done[i]:
+                            extended_content_definitions.append(None)
+                            continue
+                        if "<think>" in text_actions[i] and "</think>" not in text_actions[i]:
+                            terminate_thinking_gen_idxs.append(i)
+                            terminate_thinking_gen_ids.append(batch.batch['input_ids'][i][batch.batch['attention_mask'][i] == 1].tolist() + list(terminate_input_ids)) # contains all the response from the prior generation in the 
+                            terminate_thinking_gen_masks.append([1] * len(terminate_thinking_gen_ids[-1]))
+                            # strange, I thought the content_ids were lists, but turns out they are tensors. Doesn't matter I guess, but keeping for consistency.
+                            extended_content_definitions.append({"content_ids": [batch.batch['responses'][i][batch.batch['attention_mask'][i][-response_len:] == 1], torch.tensor(terminate_input_ids)], "should_add_loss_mask": [True, False]})
+                        else:
+                            extended_content_definitions.append({"content_ids": [batch.batch['responses'][i][batch.batch['attention_mask'][i][-response_len:] == 1]], "should_add_loss_mask": [True]})
+                    # the thing is if after this point, there are any that need to be regenerated, then I should terminate them. I could train this portion? I should. perhaps the behavior needs to be learned to not just take the last number or something dumb.
+                    # need to ensure that I add it in a way that doesn't train these tokens. 
+                    if len(terminate_thinking_gen_idxs) != 0:
+                        pad_extra_num = self.config.trainer.n_gpus_per_node - (len(terminate_thinking_gen_ids) % self.config.trainer.n_gpus_per_node)
+                        terminate_thinking_input_ids, terminate_thinking_attention_mask, terminate_thinking_position_ids = prepare_data_for_data_proto(terminate_thinking_gen_ids + [terminate_thinking_gen_ids[0]]*pad_extra_num, terminate_thinking_gen_masks + [terminate_thinking_gen_masks[0]] * pad_extra_num)
+                        terminate_thinking_batch_input = DataProto(
+                            td.TensorDict(dict(
+                                input_ids = terminate_thinking_input_ids,
+                                attention_mask = terminate_thinking_attention_mask,
+                                position_ids = terminate_thinking_position_ids,
+                            ), batch_size=len(terminate_thinking_input_ids)),
+                            meta_info=gen_batch.meta_info, # I missing data_source and index fields. Not sure if important.
+                        )
+                        terminate_thinking_batch_output = actor_rollout_wg.generate_sequences(terminate_thinking_batch_input)
+                        additional_text_actions = self.tokenizer.batch_decode(terminate_thinking_batch_output.batch['responses'], skip_special_tokens=True)
+                        response_len = len(terminate_thinking_batch_output.batch['responses'][0])
+                    for j, i in enumerate(terminate_thinking_gen_idxs):
+                        text_actions[i] = text_actions[i] + qwen3_terminating_str + additional_text_actions[j]
+                        extended_content_definitions[i]["content_ids"].append(terminate_thinking_batch_output.batch['responses'][j][terminate_thinking_batch_output.batch['attention_mask'][j][-response_len:] == 1])
+                        extended_content_definitions[i]["should_add_loss_mask"].append(True)
                 next_obs, rewards, dones, infos = envs.step(text_actions, is_done, self.tokenizer)
                 if len(rewards.shape) == 2:
                     rewards = rewards.squeeze(1)
@@ -491,7 +543,10 @@ class TrajectoryCollector:
                     if is_done[i]:
                         continue
                     response_len = len(batch.batch['responses'][0])
-                    add_assistant_message(i, text_actions[i], batch.batch['responses'][i][batch.batch['attention_mask'][i][-response_len:] == 1], should_add_loss_mask=True)
+                    if extended_content_definitions is not None:
+                        add_assistant_message(i, text_actions[i], extended_content_definition=extended_content_definitions[i])
+                    else: 
+                        add_assistant_message(i, text_actions[i], batch.batch['responses'][i][batch.batch['attention_mask'][i][-response_len:] == 1], should_add_loss_mask=True)
                     add_user_messages(i, next_obs['chat'][i])
                     # if the assistant message is too long, I shouldn't really restore it, 
                     # I should rather clip it to length just in case the sequence is too long,
@@ -588,7 +643,97 @@ class TrajectoryCollector:
                 batch = batch.union(batch_output)
                 
                 text_actions = self.tokenizer.batch_decode(batch.batch['responses'], skip_special_tokens=True)
+                # need to inject similar logic for terminating overlong thoughts for qwen3 style reasoning models.
+                # how do I do this in a way that can have the logic in both locations?
+                # this location. 
+                # definitely have to do the logic a bit differently. Perhaps I can save the implementation from 
+                # becoming overly complex by modifying the batch which is packaged as thinking and response ids 
+                # along with attention mask and add a loss mask.
 
+                if "qwen3" in self.config.actor_rollout_ref.model.path.lower():#self.config.actor_rollout_ref.actor.tuncate_thinking_model:
+                    extended_content_definitions = []
+                    qwen3_terminating_str = "Considering the limited time by the user, I have to give the solution based on the thinking directly now.\n</think>.\n\n"
+                    terminate_thinking_gen_idxs = []
+                    terminate_thinking_gen_ids = []
+                    terminate_thinking_gen_masks = []
+                    terminate_input_ids: list[int] = self.tokenizer.encode(qwen3_terminating_str, add_special_tokens=True)
+                    response_len = len(batch.batch['responses'][0])
+                    for i in range(len(text_actions)):
+                        if is_done[i]:
+                            extended_content_definitions.append(None)
+                            continue
+                        if "<think>" in text_actions[i] and "</think>" not in text_actions[i]:
+                            terminate_thinking_gen_idxs.append(i)
+                            terminate_thinking_gen_ids.append(batch.batch['input_ids'][i][batch.batch['attention_mask'][i] == 1].tolist() + list(terminate_input_ids)) # contains all the response from the prior generation in the 
+                            terminate_thinking_gen_masks.append([1] * len(terminate_thinking_gen_ids[-1]))
+                            # strange, I thought the content_ids were lists, but turns out they are tensors. Doesn't matter I guess, but keeping for consistency.
+                            extended_content_definitions.append({"content_ids": [batch.batch['responses'][i][batch.batch['attention_mask'][i][-response_len:] == 1], torch.tensor(terminate_input_ids)], "should_add_loss_mask": [True, False]})
+                        else:
+                            extended_content_definitions.append({"content_ids": [batch.batch['responses'][i][batch.batch['attention_mask'][i][-response_len:] == 1]], "should_add_loss_mask": [True]})
+                    # the thing is if after this point, there are any that need to be regenerated, then I should terminate them. I could train this portion? I should. perhaps the behavior needs to be learned to not just take the last number or something dumb.
+                    # need to ensure that I add it in a way that doesn't train these tokens. 
+                    def prepare_data_for_data_proto(input_ids_list: list[list[int]], attention_mask_list: list[list[int]]):
+                        input_ids = pad_sequence([torch.tensor(t) for t in input_ids_list], batch_first=True, padding_value=self.tokenizer.pad_token_id, padding_side='left')
+                        attention_mask = pad_sequence([torch.tensor(t) for t in attention_mask_list], batch_first=True, padding_value=0, padding_side='left')
+                        position_ids = compute_position_id_with_mask(attention_mask)
+                        return input_ids, attention_mask, position_ids
+                    if len(terminate_thinking_gen_idxs) != 0:
+                        pad_extra_num = self.config.trainer.n_gpus_per_node - (len(terminate_thinking_gen_ids) % self.config.trainer.n_gpus_per_node)
+                        terminate_thinking_input_ids, terminate_thinking_attention_mask, terminate_thinking_position_ids = prepare_data_for_data_proto(terminate_thinking_gen_ids + [terminate_thinking_gen_ids[0]]*pad_extra_num, terminate_thinking_gen_masks + [terminate_thinking_gen_masks[0]] * pad_extra_num)
+                        terminate_thinking_batch_input = DataProto(
+                            td.TensorDict(dict(
+                                input_ids = terminate_thinking_input_ids,
+                                attention_mask = terminate_thinking_attention_mask,
+                                position_ids = terminate_thinking_position_ids,
+                            ), batch_size=len(terminate_thinking_input_ids)),
+                            meta_info=gen_batch.meta_info,
+                        )
+                        terminate_thinking_batch_output = actor_rollout_wg.generate_sequences(terminate_thinking_batch_input)
+                        additional_text_actions = self.tokenizer.batch_decode(terminate_thinking_batch_output.batch['responses'], skip_special_tokens=True)
+                        response_len = len(terminate_thinking_batch_output.batch['responses'][0])
+                    if len(terminate_thinking_gen_idxs) != 0:
+                        # prompt_input_ids_list = 
+                        # TODO: fix code so it pushes together to one batch with a loss mask. should be able to take most of the prior one, which should only have one input ids for the prompt so far.
+                        # prompt_input_ids = pad_sequence([torch.tensor(t) for t in prompt_input_ids_list], batch_first=True, padding_value=self.tokenizer.pad_token_id, padding_side='left')
+                        prompt_input_ids = batch.batch['prompts']
+                        # prompt_attention_mask = pad_sequence([torch.tensor([1] * len(t)) for t in prompt_input_ids_list], batch_first=True, padding_value=0, padding_side='left')
+                        prompt_attention_mask = batch.batch['attention_mask'][:, :prompt_input_ids.shape[1]]
+                        response_input_ids_list = []
+                        loss_mask_list = []
+                        for i in range(batch_size):
+                            response_input_ids_list.append(batch.batch['responses'][i][batch.batch['attention_mask'][i, -batch.batch['responses'].shape[1]:] == 1].tolist())
+                            loss_mask_list.append([1] * len(response_input_ids_list[-1]))
+                        for j, i in enumerate(terminate_thinking_gen_idxs):
+                            text_actions[i] = text_actions[i] + qwen3_terminating_str + additional_text_actions[j]
+                            # extended_content_definitions[i]["content_ids"].append(terminate_thinking_batch_output.batch['responses'][j][terminate_thinking_batch_output.batch['attention_mask'][j][-response_len:] == 1])
+                            response_input_ids_list[i].extend(terminate_input_ids)
+                            loss_mask_list[i].extend([0] * len(terminate_input_ids))
+                            response_input_ids_list[i].extend(terminate_thinking_batch_output.batch['responses'][j][terminate_thinking_batch_output.batch['attention_mask'][j][-response_len:] == 1])
+                            loss_mask_list[i].extend([1] * len(terminate_thinking_batch_output.batch['responses'][j][terminate_thinking_batch_output.batch['attention_mask'][j][-response_len:] == 1]))
+                            # extended_content_definitions[i]["should_add_loss_mask"].append(True)
+                        response_input_ids = pad_sequence([torch.tensor(r_ids) for r_ids in response_input_ids_list], batch_first=True, padding_value=self.tokenizer.pad_token_id, padding_side='right')
+                        response_mask = pad_sequence([torch.tensor([1] * len(r_ids)) for r_ids in response_input_ids_list], batch_first=True, padding_value=0, padding_side='right')
+                        
+                        complete_input_ids = torch.concat([prompt_input_ids, response_input_ids], dim=-1)
+                        complete_attention_mask = torch.concat([prompt_attention_mask, response_mask], dim=-1)
+                        batch.batch['responses'] = response_input_ids
+                        batch.batch['input_ids'] = complete_input_ids 
+                        batch.batch['attention_mask'] = complete_attention_mask
+                        batch.batch['position_ids'] = compute_position_id_with_mask(complete_attention_mask)
+                        loss_mask = pad_sequence([torch.tensor(t) for t in loss_mask_list], batch_first=True, padding_value=0, padding_side='right')
+                        batch.batch['loss_mask'] = loss_mask
+                    else:
+                        batch.batch['loss_mask'] = batch.batch['attention_mask'][:, -batch.batch['responses'].shape[1]:]
+                    # breakpoint()
+                    size_max = 3136
+                    input_size = batch.batch['prompts'].shape[1]
+                    responses_size = batch.batch['responses'].shape[1]
+                    full_input_ids_size = batch.batch['input_ids'].shape[1]
+                    batch.batch['responses'] = torch.concat([batch.batch['responses'], torch.full((batch_size, size_max - input_size - responses_size), self.tokenizer.pad_token_id)], dim=1)
+                    batch.batch['input_ids'] = torch.concat([batch.batch['input_ids'], torch.full((batch_size, size_max - full_input_ids_size), self.tokenizer.pad_token_id)], dim=1)
+                    batch.batch['attention_mask'] = torch.concat([batch.batch['attention_mask'], torch.full((batch_size, size_max - full_input_ids_size), 0)], dim=1)
+                    batch.batch['position_ids'] = compute_position_id_with_mask(batch.batch['attention_mask'])
+                    batch.batch['loss_mask'] = torch.concat([batch.batch['loss_mask'], torch.full((batch_size, size_max - input_size - responses_size), 0)], dim=1)
                 next_obs, rewards, dones, infos = envs.step(text_actions, is_done, self.tokenizer)
 
                 if len(rewards.shape) == 2:
@@ -671,7 +816,7 @@ class TrajectoryCollector:
         if self.config.env.non_terminal_penalty:
             episode_rewards[np.logical_not(is_done) | prompt_too_long] = -self.config.env.non_terminal_penalty
         # does episode reward not count towards GRPO? No it does, funny enough, the reward thing I think we record per step isn't used tho. seems just for logging.
-        # breakpoint()
+
         # need to consider if this if statement can be commented out...
         # if self.config.env.belief_length_penalty: # 0.1
         # only want to further penalize the runs which did terminate, and terminated with some correct output. to make them correct and smaller.
@@ -1289,7 +1434,6 @@ class TrajectoryCollector:
                     elif self.config.env.env_name == "combolock" and (self.config.trainer.belief_state_grading_type==-2 or self.config.trainer.belief_state_grading_type==-3):
                         # -2 grade beliefs with only how long they are
                         # -3 grade beliefs with only how correct/parsable they are.
-                        # breakpoint()
                         def is_valid_belief_strict(s):
                             if "<belief>" in s and "</belief>" in s.split("<belief>")[1]:# this is technically more strict than the projection for combolock, but I think this is good for the grader. # in "<belief>".join(s.split("<belief>")[1:]):
                                 return True
