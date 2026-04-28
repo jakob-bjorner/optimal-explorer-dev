@@ -1142,7 +1142,7 @@ class RayPPOTrainer:
                             old_log_prob.batch.pop("entropys")
                             batch = batch.union(old_log_prob)
 
-                            if "rollout_log_probs" in batch.batch.keys():
+                            if False: # "rollout_log_probs" in batch.batch.keys():
                                 # TODO: we may want to add diff of probs too.
                                 rollout_old_log_probs = batch.batch["rollout_log_probs"]
                                 actor_old_log_probs = batch.batch["old_log_probs"]

@@ -124,6 +124,7 @@ if [ -z "${CKPT+x}" ]; then
 else
     RESUME_PATH=${CKPT}
 fi
+RESUME_PATH=${RESUME_PATH_OVERRIDE:-$RESUME_PATH}
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
