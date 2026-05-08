@@ -48,6 +48,9 @@ else
     RESUME_PATH=checkpoints/verl_agent_alfworld/colabbench_grpo_${CKPT}
 fi
 RESUME_PATH=${RESUME_PATH_OVERRIDE:-$RESUME_PATH}
+
+SAVE_FREQ=${SAVE_FREQ:-50}
+
 # 0 corresponds to belief grading with full reconstruction, and 1 with reconstructing only observations.
 
 
@@ -162,6 +165,9 @@ python3 -m examples.data_preprocess.prepare \
 # CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_2.0_3GRPO_INSTRUCT_G_BG_2x_REF_RECONSTRUCT/global_step_50" STEP_RESUME=50 DEBUG=GRPO_INSTRUCT_G_BG_2x_REF_RECONSTRUCT INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_2.0_3GRPO_INSTRUCT_G_BG_2x_REF_RECONSTRUCT/global_step_100" STEP_RESUME=100 DEBUG=GRPO_INSTRUCT_G_BG_2x_REF_RECONSTRUCT INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_2.0_3GRPO_INSTRUCT_G_BG_2x_REF_RECONSTRUCT/global_step_50" STEP_RESUME=50 DEBUG=GRPO_INSTRUCT_G_BG_2x_REF_RECONSTRUCT INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_2.0_3GRPO_INSTRUCT_G_BG_2x_REF_RECONSTRUCT/global_step_100" STEP_RESUME=100 DEBUG=GRPO_INSTRUCT_G_BG_2x_REF_RECONSTRUCT INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed3_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_2.0_3GRPO_INSTRUCT_G_BG_2x_REF_RECONSTRUCT/global_step_50" STEP_RESUME=50 DEBUG=GRPO_INSTRUCT_G_BG_2x_REF_RECONSTRUCT INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed3_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_2.0_3GRPO_INSTRUCT_G_BG_2x_REF_RECONSTRUCT/global_step_100" STEP_RESUME=100 DEBUG=GRPO_INSTRUCT_G_BG_2x_REF_RECONSTRUCT INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
 # DEBUG=GRPO_INSTRUCT_G_ABBEL_LONG_FR_2 TOTAL_EPOCHS=200 SEED=2 bash examples/grpo_trainer/run_colabbench.sh; CKPT="qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_ABBEL_LONG_FR_2/global_step_50" STEP_RESUME=50 DEBUG=GRPO_INSTRUCT_G_ABBEL_LONG_FR_2 INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed2_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_ABBEL_LONG_FR_2/global_step_100" STEP_RESUME=100 DEBUG=GRPO_INSTRUCT_G_ABBEL_LONG_FR_2 INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
 
+
+# RESUME_PATH_OVERRIDE="checkpoints/verl_agent_alfworld/grpo_qwen2.5_7b_16sfr_seed3_sc_False_belief_prompting_True_BG_2.0combolock_vs_r1_new_parse6_2/global_step_100" STEP_RESUME=100 SEED=3 DEBUG=ABBEL_COMBOLOCK_DOM_BG_100train TOTAL_EPOCHS=121 SAVE_FREQ=5 bash examples/grpo_trainer/run_colabbench.sh; 
+
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/verl-agent/text/train.parquet \
@@ -230,7 +236,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.n_gpus_per_node=4 \
     trainer.resume_from_path=$RESUME_PATH \
     trainer.nnodes=1 \
-    trainer.save_freq=50 \
+    trainer.save_freq=$SAVE_FREQ \
     trainer.test_freq=-1 \
     trainer.total_epochs=$TOTAL_EPOCHS \
     trainer.val_before_train=False $@
