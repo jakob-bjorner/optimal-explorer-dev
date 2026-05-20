@@ -1231,13 +1231,15 @@ class TrajectoryCollector:
                             # primary_reward = primary_phi
                             # secondary_reward = secondary_phi
 
-                            # I want to bound the advantage that I will apply after GRPO without normalization is applied. for these two rewards, I'll find their mean and subtract it, so I just need to ensure they are less than 0.7 away from their mean, otherwise, I'll clip them
-                            # a_p = p - (p + s) / 2, well this can be done by finding their distance, then adding to the smaller one double the difference above 0.7 that the mean difference is.
+                            advantage_cap = False
+                            if advantage_cap:
+                                # I want to bound the advantage that I will apply after GRPO without normalization is applied. for these two rewards, I'll find their mean and subtract it, so I just need to ensure they are less than 0.7 away from their mean, otherwise, I'll clip them
+                                # a_p = p - (p + s) / 2, well this can be done by finding their distance, then adding to the smaller one double the difference above 0.7 that the mean difference is.
 
-                            if primary_reward < secondary_reward:
-                                primary_reward += max(0, abs((primary_reward-secondary_reward)/2)-self.config.trainer.get("belief_grade_mag_cutoff", 0.7/5)) * 2
-                            else:
-                                secondary_reward += max(0, abs((primary_reward-secondary_reward)/2)-self.config.trainer.get("belief_grade_mag_cutoff", 0.7/5)) * 2
+                                if primary_reward < secondary_reward:
+                                    primary_reward += max(0, abs((primary_reward-secondary_reward)/2)-self.config.trainer.get("belief_grade_mag_cutoff", 0.7/5)) * 2
+                                else:
+                                    secondary_reward += max(0, abs((primary_reward-secondary_reward)/2)-self.config.trainer.get("belief_grade_mag_cutoff", 0.7/5)) * 2
 
 
                             advantage_magnitude_list.extend([abs((primary_reward - secondary_reward)/2) * self.config.trainer.belief_state_grading])
