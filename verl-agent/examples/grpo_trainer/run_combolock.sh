@@ -19,12 +19,15 @@ group_size=2
 B=${B:-7}
 GRADE_BELIEF=${GRADE_BELIEF:-0.0}
 FULL_HIST_BELIEF=${FULL_HIST_BELIEF:-False}
+MODEL_FULL_HIST_BELIEF=${MODEL_FULL_HIST_BELIEF:-False}
 GRADE_BELIEF_TYPE=${GRADE_BELIEF_TYPE:-0}
 MODEL_NAME=${MODEL_NAME:-"qwen/qwen2.5-${B}b-instruct"}
 BG_CEIL_RWD=${BG_CEIL_RWD:--0.8}
 KL_LOSS_COEF=${KL_LOSS_COEF:-0.01}
 DIV_BY_CONST=${DIV_BY_CONST:-True}
 LENPEN=${LENPEN:-0}
+EPOCHS=${EPOCHS:-140}
+LR=${LR:-0.000001}
 # invalid_action_penalty_coef=0.0
 # also their kl is 0.01 lol.
 # Need to change the max_prompt_len hyper param for real run. ahh its probably ok actually.
@@ -72,13 +75,19 @@ python3 -m examples.data_preprocess.prepare \
 # B=7 train_data_size=16 SEED=1 FULL_HIST_BELIEF=True MAX_PROMPT_LEN=4096 DEBUG=combolock_full_history bash examples/grpo_trainer/run_combolock.sh
 # B=7 train_data_size=16 SEED=3 GRADE_BELIEF_TYPE=1 BG_CEIL_RWD=-0.9 GRADE_BELIEF=5.0 DEBUG=combolock_bg_log_obs_seed3_no_grade_any_invalid_adv_cap_div5 bash examples/grpo_trainer/run_combolock.sh; B=7 STEP_RESUME=20  CKPT="_seed3_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_seed3_no_grade_any_invalid_adv_cap_div5/global_step_20" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=40 CKPT="_seed3_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_seed3_no_grade_any_invalid_adv_cap_div5/global_step_40" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=60 CKPT="_seed3_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_seed3_no_grade_any_invalid_adv_cap_div5/global_step_60" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=80 CKPT="_seed3_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_seed3_no_grade_any_invalid_adv_cap_div5/global_step_80" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=100 CKPT="_seed3_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_seed3_no_grade_any_invalid_adv_cap_div5/global_step_100" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=120 CKPT="_seed3_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_seed3_no_grade_any_invalid_adv_cap_div5/global_step_120" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=140 CKPT="_seed3_sc_False_belief_prompting_True_BG_5.0combolock_bg_log_obs_seed3_no_grade_any_invalid_adv_cap_div5/global_step_140" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh
 # DIV_BY_CONST=True B=7 train_data_size=16 SEED=1 BG_CEIL_RWD=-0.3 LENPEN=0.01 GRADE_BELIEF_TYPE=0 GRADE_BELIEF=0.5 DEBUG=combolock_bg_reconstruct_len_pen_bg-0_3_t0_smaller_lr bash examples/grpo_trainer/run_combolock.sh +trainer.theshold_next_belief_grade=-1.6 +trainer.belief_grade_mag_cutoff=0.7; B=7 STEP_RESUME=20  GRADE_BELIEF_TYPE=0 CKPT="_seed1_sc_False_belief_prompting_True_BG_0.5combolock_bg_reconstruct_len_pen_bg-0_3_t0_smaller_lr/global_step_20" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=40 GRADE_BELIEF_TYPE=0 CKPT="_seed1_sc_False_belief_prompting_True_BG_0.5combolock_bg_reconstruct_len_pen_bg-0_3_t0_smaller_lr/global_step_40" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=60 GRADE_BELIEF_TYPE=0 CKPT="_seed1_sc_False_belief_prompting_True_BG_0.5combolock_bg_reconstruct_len_pen_bg-0_3_t0_smaller_lr/global_step_60" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh
-# DIV_BY_CONST=True B=7 train_data_size=16 SEED=1 BG_CEIL_RWD=-0.3 LENPEN=0.1 GRADE_BELIEF_TYPE=0 GRADE_BELIEF=5.0 DEBUG=combolock_bg_reconstruct_len_pen_bg-0_3_t0_learn_fast bash examples/grpo_trainer/run_combolock.sh +trainer.theshold_next_belief_grade=-1.6 +trainer.belief_grade_mag_cutoff=0.7;  B=7 STEP_RESUME=20  GRADE_BELIEF_TYPE=0 CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0ccombolock_bg_reconstruct_len_pen_bg-0_3_t0_learn_fast/global_step_20" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=40 GRADE_BELIEF_TYPE=0 CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0ccombolock_bg_reconstruct_len_pen_bg-0_3_t0_learn_fast/global_step_40" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=60 GRADE_BELIEF_TYPE=0 CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0ccombolock_bg_reconstruct_len_pen_bg-0_3_t0_learn_fast/global_step_60" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh
+# EPOCHS=60 DIV_BY_CONST=True B=7 train_data_size=16 SEED=1 BG_CEIL_RWD=-0.3 LENPEN=0.1 GRADE_BELIEF_TYPE=0 GRADE_BELIEF=5.0 DEBUG=combolock_bg_reconstruct_len_pen_bg-0_3_t0_learn_fast bash examples/grpo_trainer/run_combolock.sh +trainer.theshold_next_belief_grade=-1.6 +trainer.belief_grade_mag_cutoff=0.7;  B=7 STEP_RESUME=20  GRADE_BELIEF_TYPE=0 CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0ccombolock_bg_reconstruct_len_pen_bg-0_3_t0_learn_fast/global_step_20" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=40 GRADE_BELIEF_TYPE=0 CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0ccombolock_bg_reconstruct_len_pen_bg-0_3_t0_learn_fast/global_step_40" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; B=7 STEP_RESUME=60 GRADE_BELIEF_TYPE=0 CKPT="_seed1_sc_False_belief_prompting_True_BG_5.0ccombolock_bg_reconstruct_len_pen_bg-0_3_t0_learn_fast/global_step_60" train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh
 # train_data_size=16 SEED=3 GRADE_BELIEF_TYPE=-2 GRADE_BELIEF=0.01 DEBUG=combolock_bg_incentivize_length bash examples/grpo_trainer/run_combolock.sh
 # train_data_size=16 SEED=3 GRADE_BELIEF_TYPE=-3 GRADE_BELIEF=1.0 DEBUG=combolock_bg_ensure_valid bash examples/grpo_trainer/run_combolock.sh
 
 # B=7 train_data_size=16 SEED=3 MODEL_NAME="Qwen/Qwen3-4B" SINGLE_CTX=True MULTI_MSG=False DEBUG=combolock_vanilla_qwen3 bash examples/grpo_trainer/run_combolock.sh
 # B=7 train_data_size=16 SEED=3 MODEL_NAME="Qwen/Qwen3-4B" DEBUG=combolock_qwen3_more bash examples/grpo_trainer/run_combolock.sh env.rollout.n=32
 
+# the below line is badly named, but actually runs a 7b model which was trained with log reconstruction grading named combolock_bg_reconstruct_len_pen_bg-0_3_t0_learn_fast. 
+# runs the step 20 save, which has good belief generation properties, but want to test the task interference of the model.
+
+# CUDA_VISIBLE_DEVICES=4,5 vllm serve checkpoints/verl_agent_alfworld/grpo_qwen2.5_7b_16sfr_seed2_sc_False_belief_prompting_True_BG_2.0combolock_qwen14b_abbel_dom_bg/temp --generation-config vllm --override-generation-config '{"max_new_tokens": 512}'
+# train_data_size=16 SEED=2 MODEL_FULL_HIST_BELIEF=True DEBUG=combolock_model_full_hist_ablation bash examples/grpo_trainer/run_combolock.sh; MODEL_FULL_HIST_BELIEF=True DEBUG=combolock_model_full_hist_ablation STEP_RESUME=20 DEBUG=combolock_model_full_hist_ablation CKPT="_seed2_sc_False_belief_prompting_True_BG_0.0combolock_model_full_hist_ablation/global_step_20" MODEL_FULL_HIST_BELIEF=True train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh;  DEBUG=combolock_model_full_hist_ablation STEP_RESUME=40 CKPT="_seed2_sc_False_belief_prompting_True_BG_0.0combolock_model_full_hist_ablation/global_step_40" MODEL_FULL_HIST_BELIEF=True train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh;  DEBUG=combolock_model_full_hist_ablation STEP_RESUME=60 CKPT="_seed2_sc_False_belief_prompting_True_BG_0.0combolock_model_full_hist_ablation/global_step_60" MODEL_FULL_HIST_BELIEF=True train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh;  DEBUG=combolock_model_full_hist_ablation STEP_RESUME=80 CKPT="_seed2_sc_False_belief_prompting_True_BG_0.0combolock_model_full_hist_ablation/global_step_80" MODEL_FULL_HIST_BELIEF=True train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh;  DEBUG=combolock_model_full_hist_ablation STEP_RESUME=100 CKPT="_seed2_sc_False_belief_prompting_True_BG_0.0combolock_model_full_hist_ablation/global_step_100" MODEL_FULL_HIST_BELIEF=True train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh;  DEBUG=combolock_model_full_hist_ablation STEP_RESUME=120 CKPT="_seed2_sc_False_belief_prompting_True_BG_0.0combolock_model_full_hist_ablation/global_step_120" MODEL_FULL_HIST_BELIEF=True train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh; DEBUG=combolock_model_full_hist_ablation STEP_RESUME=140 CKPT="_seed2_sc_False_belief_prompting_True_BG_0.0combolock_model_full_hist_ablation/global_step_140" MODEL_FULL_HIST_BELIEF=True train_data_size=128 GRADE_BELIEF=0.0 MAX_ATTEMPTS=16 VOCAB='qawsedrftgyhujik' bash examples/grpo_trainer/run_combolock_inference.sh
+# train_data_size=16 SEED=3 LR=0.000005 DEBUG=combolock_diff_lr bash examples/grpo_trainer/run_combolock.sh
 # stuff for reasoning models.
 #    actor_rollout_ref.model.enable_activation_offload=True \
 #    actor_rollout_ref.rollout.max_model_len=$(($MAX_PROMPT_LEN * 2)) \
@@ -95,7 +104,7 @@ python3 -m verl.trainer.main_ppo \
     data.truncation='error' \
     data.return_raw_chat=True \
     actor_rollout_ref.model.path=$MODEL_NAME \
-    actor_rollout_ref.actor.optim.lr=1e-6 \
+    actor_rollout_ref.actor.optim.lr=$LR \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=16 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=2 \
@@ -131,6 +140,7 @@ python3 -m verl.trainer.main_ppo \
     +env.vocab="0123456789" \
     +env.max_attempts=12 \
     +env.full_history_belief=$FULL_HIST_BELIEF \
+    +env.model_full_history_belief=$MODEL_FULL_HIST_BELIEF \
     env.rollout.n=$group_size \
     trainer.post_normalization_length_penalty=$LENPEN \
     +trainer.ceiling_belief_grading_reward=$BG_CEIL_RWD \
@@ -145,5 +155,5 @@ python3 -m verl.trainer.main_ppo \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
     trainer.test_freq=10000 \
-    trainer.total_epochs=140 \
+    trainer.total_epochs=$EPOCHS \
     trainer.val_before_train=False $@

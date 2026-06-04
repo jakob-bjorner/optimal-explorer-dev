@@ -969,7 +969,7 @@ class TrajectoryCollector:
                                         },
                                         model="google/gemini-3-flash-preview",
                                         messages=[{"role": "user", "content":prompt}],
-                                        ), timeout=timeout)).choices[0].message.content
+                                        ), timeout=timeout)).choices[0].message.content or ""
                                 except Exception as e:
                                     if isinstance(e, asyncio.TimeoutError):
                                         return ""

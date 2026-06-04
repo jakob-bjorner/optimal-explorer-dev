@@ -26,6 +26,7 @@ train_data_size=${train_data_size:-126}
 GRADE_BELIEF=${GRADE_BELIEF:-0.0}
 STEP_RESUME=${STEP_RESUME:-100}
 FULL_HIST_BELIEF=${FULL_HIST_BELIEF:-False}
+MODEL_FULL_HIST_BELIEF=${MODEL_FULL_HIST_BELIEF:-False}
 GRADE_BELIEF_TYPE=${GRADE_BELIEF_TYPE:-0}
 MODEL_NAME=${MODEL_NAME:-"qwen/qwen2.5-${B}b-instruct"}
 # 16 for training
@@ -134,6 +135,7 @@ python3 -m verl.trainer.main_ppo \
     +env.vocab=$VOCAB \
     +env.max_attempts=$MAX_ATTEMPTS \
     +env.full_history_belief=$FULL_HIST_BELIEF \
+    +env.model_full_history_belief=$MODEL_FULL_HIST_BELIEF \
     env.rollout.n=1 \
     +trainer.belief_state_grading_type=$GRADE_BELIEF_TYPE \
     trainer.belief_state_grading=$GRADE_BELIEF \
