@@ -171,6 +171,12 @@ python3 -m examples.data_preprocess.prepare \
 
 # RESUME_PATH_OVERRIDE="checkpoints/verl_agent_alfworld/grpo_qwen2.5_7b_16sfr_seed3_sc_False_belief_prompting_True_BG_2.0combolock_vs_r1_new_parse6_2/global_step_100" STEP_RESUME=100 SEED=3 DEBUG=ABBEL_COMBOLOCK_DOM_BG_100train TOTAL_EPOCHS=121 SAVE_FREQ=5 bash examples/grpo_trainer/run_colabbench.sh; 
 
+# comand for launching the backend of an experimental idea where the belief generator is a separate model from the action policy. Turns out to be very helpful in increasing performance.
+# ```sh
+# CUDA_VISIBLE_DEVICES=4,5 vllm serve checkpoints/verl_agent_alfworld/grpo_qwen2.5_7b_16sfr_seed2_sc_False_belief_prompting_True_BG_2.0combolock_qwen14b_abbel_dom_bg/temp --generation-config vllm 
+# grpo_qwen2.5_7b_16sfr_seed1_sc_False_belief_prompting_True_BG_5.0combolock_qwen14b_abbel_obs0.5_stable
+# grpo_qwen2.5_7b_16sfr
+# ```
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/verl-agent/text/train.parquet \
