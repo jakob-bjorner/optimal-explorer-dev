@@ -103,7 +103,6 @@ else
     RESUME_PATH=checkpoints/verl_agent_alfworld/colabbench_grpo_${CKPT}
 fi
 
-
 RESUME_PATH=${RESUME_PATH_OVERRIDE:-$RESUME_PATH}
 
 # CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_1.0_1GRPO_INSTRUCT_G_BG_NOCRASHPLS/global_step_100" IS_MEM1=False INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
@@ -125,6 +124,7 @@ RESUME_PATH=${RESUME_PATH_OVERRIDE:-$RESUME_PATH}
 # CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_FC_BG_PROXY/global_step_50" STEP_RESUME=50 FULL_HIST_BELIEF=True DEBUG=GRPO_INSTRUCT_G_FC_BG_PROXY INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh; CKPT="qwen2.5-7b-instruct_16_seed1_sc_False_belief_promp_True_is_mem1_False_belief_lp_0_bg_0.0_0GRPO_INSTRUCT_G_FC_BG_PROXY/global_step_100" STEP_RESUME=100 FULL_HIST_BELIEF=True DEBUG=GRPO_INSTRUCT_G_FC_BG_PROXY INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh
 
 #RESUME_PATH_OVERRIDE="checkpoints/verl_agent_alfworld/grpo_qwen2.5_7b_16sfr_seed3_sc_False_belief_prompting_True_BG_2.0combolock_vs_r1_new_parse6_2/global_step_100" STEP_RESUME=100 DEBUG=ABBEL_COMBOLOCK_DOM_BG INSTRUCT=True train_data_size=256 TEMPERATURE=0.01 bash examples/grpo_trainer/run_colabbench_inference.sh;
+
 
 
 python3 -m verl.trainer.main_ppo \
