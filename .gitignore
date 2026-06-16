@@ -188,3 +188,12 @@ unsloth_compiled_cache/
 wordle_*.jsonl
 checkpoints
 *.pkl
+torchinductor_*
+*/TTT_pickles/*
+**/llm_calls/*
+**/game_results/*
+*.tar.gz
+*.gradio
+**/docker/*
+verl-agent/docs
+**/frontier_baselines/logs

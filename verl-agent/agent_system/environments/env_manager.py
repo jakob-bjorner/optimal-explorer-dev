@@ -25,7 +25,8 @@ from agent_system.memory import SimpleMemory
 from copy import deepcopy
 import re
 import requests
-
+import openai
+from concurrent.futures import ThreadPoolExecutor
 def parse_gamefile(infos):
     gamefile = []
     for info in infos:
@@ -553,7 +554,7 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
         new_action_or_belief = ~(self.action_or_belief & np.array(valids, dtype=np.bool)) # you go to belief state unless you generate a valid belief while in belief state.
         if self.config.actor_rollout_ref.rollout.single_context and not self.config.actor_rollout_ref.rollout.belief_multiple_messages:
             new_action_or_belief = self.action_or_belief * 0
-        if self.config.env.full_history_belief:
+        if self.config.env.full_history_belief or self.config.env.model_full_history_belief:
             new_action_or_belief = self.action_or_belief * 0
             # and we populate the belief for a new action prompt with the ground truth belief of our choice. this is done in the build_chat_obs
         self.belief_generation_failures += (self.action_or_belief & ~np.array(valids, dtype=np.bool) & ~is_not_processing).sum()
@@ -595,6 +596,8 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
             # so the chat should be preparing the lm call to generate the indicated item.
             # self.action_or_belief 
             # self.memory
+            # breakpoint()
+            belief_generation_messages = []
             for i in range(len(new_action_or_belief)):
                 if new_action_or_belief[i]:
                     # this is belief generation prep
@@ -645,7 +648,67 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
                     postprocess_text_obs.append(new_belief_messages)
                 else:
                     # this is action generation prep
-                    if self.config.env.full_history_belief:
+                    if self.config.env.model_full_history_belief:
+                        # need to handle the actions as normal, but then construct the belief generation prompts to be run in parallel after the loop.
+                        if len(self.memory) == 1:
+                            # first belief generation message.
+                            prior_belief = COMBO_NO_PRIOR_BELIEF_MESSAGE
+                        else:
+                            prior_belief = self.prior_beliefs[i]
+                        if valids[i]: 
+                            agent_action = full_text_actions[i].split("<action>")[1].split("</action>")[0].strip()
+                            env_response = text_obs[i]
+                        else:
+                            agent_action = "invalid action"
+                            if "<action>" in full_text_actions[i] and "</action>" in full_text_actions[i].split("<action>")[1]:
+                                # this has a different error message than the other one. lol.
+                                content_summary = full_text_actions[i] if len(full_text_actions[i]) < 20 else f"...{full_text_actions[i][-20:]}"
+                                env_response = f"Could not parse valid guess from: '{content_summary}'. Please ensure the guess is contained in the final characters of your response, and using only use the characters from the vocab in your guess characters. Do not repeat characters in your guess."
+                            else:
+                                # so we don't have the tags correct in this one.
+                                env_response = 'Could not parse response. Please ensure your response is in the format: <action> ... </action>.'
+
+                        new_belief_messages = [{'role': "user", 'content': COMBO_BELIEF_PROMPT.format(agent_first_message=COMBO_AGENT_FIRST_MESSAGE.format_map({"vocab_list": list(self.config.env.vocab), "max_attempts": self.config.env.max_attempts}),
+                                                                                                    belief_state=prior_belief,
+                                                                                                    agent_action=agent_action,
+                                                                                                    env_response=env_response)}]
+                        self.prior_belief_messages[i] = new_belief_messages
+                        belief_generation_messages.append(new_belief_messages)
+                        # postprocess_text_obs.append(new_belief_messages)
+                        
+                    elif self.config.env.full_history_belief:
+                        # if self.config.env.model_full_history_belief:
+                        #     import openai
+                        #     from concurrent.futures import ThreadPoolExecutor
+                        #     client = openai.OpenAI(api_key="your_api_key_here")
+
+                        #     def get_response(prompt):
+                        #         # This function handles a single request
+                        #         response = client.chat.completions.create(
+                        #             model="checkpoints/verl_agent_alfworld/grpo_qwen2.5_7b_16sfr_seed2_sc_False_belief_prompting_True_BG_2.0combolock_qwen14b_abbel_dom_bg/temp",
+                        #             messages=[{"role": "user", "content": prompt}]
+                        #         )
+                        #         return response.choices[0].message.content
+                        #     prompts = ["Tell me a joke", "Write a haiku about code", "What is 2+2?"]
+                        #     with ThreadPoolExecutor(max_workers=5) as executor:
+                        #         results = list(executor.map(get_response, prompts))
+
+                        #     env_response = text_obs[i]
+                        #     if len(self.memory) == 1:
+                        #         prior_belief = COMBO_NO_PRIOR_BELIEF_MESSAGE
+                        #     else:
+                        #         prior_belief = self.prior_beliefs[i]
+                        #     # from when I only wanted the action saved in the history
+                        #     action = actions_or_beliefs[i]
+                        #     belief = prior_belief + "\n<ask>" + action.strip() + "</ask>\n<environment>" + env_response.strip() + "</environment>"
+                        #     # to now having the thinking also saved along with the action
+                        #     # action = full_text_actions[i]
+                        #     # belief = prior_belief + "\n" + action.strip() + "\n<environment>" + env_response.strip() + "</environment>"
+                        #     agent_first_message = COMBO_AGENT_FIRST_MESSAGE.format_map({"vocab_list": list(self.config.env.vocab), "max_attempts": self.config.env.max_attempts})
+                        #     # hint = "It is your last step." if infos[i]['is_last_step'] else f"You have {infos[i]['steps_remaining']} steps remaining." in combolock we lack a hint, but seems to be fine.
+                        #     new_action_messages = [{'role':'user', 'content': COMBO_ACTION_PROMPT.format(agent_first_message=agent_first_message, belief_state=belief)}]
+                        #     self.prior_beliefs[i] = belief
+                        #     postprocess_text_obs.append(new_action_messages)
                         env_response = text_obs[i]
                         if len(self.memory) == 1:
                             prior_belief = COMBO_NO_PRIOR_BELIEF_MESSAGE
@@ -686,6 +749,34 @@ class ComboLockEnvironmentManager(EnvironmentManagerBase):
                         if self.config.actor_rollout_ref.rollout.single_context:
                             new_action_messages = [{'role': "user", 'content': COMBO_ACTION_PROMPT_SINGLE_CONTEXT}]
                         postprocess_text_obs.append(new_action_messages)
+            # post the for loop, and then executing some logic
+            if self.config.env.model_full_history_belief:
+
+                client = openai.OpenAI(base_url=f"http://localhost:8000/v1", api_key="EMPTY")
+
+                def get_response(messages):
+                    # This function handles a single request
+                    response = client.chat.completions.create(
+                        model="checkpoints/verl_agent_alfworld/grpo_qwen2.5_7b_16sfr_seed2_sc_False_belief_prompting_True_BG_2.0combolock_qwen14b_abbel_dom_bg/temp",
+                        messages=messages
+                    )
+                    return response.choices[0].message.content
+                with ThreadPoolExecutor(max_workers=32) as executor:
+                    text_beliefs = list(executor.map(get_response, belief_generation_messages))
+                belief_texts, valids = self.projection_f(text_beliefs, self.action_or_belief * 0 + 1) # all beliefs
+                for i in range(len(belief_texts)):
+                    # assert valids[i], f"must be valid, but got {valids[i]=}"
+                    if valids[i] == False:
+                        # just use prior belief, I don't really know what to do in this case...
+                        belief = self.prior_beliefs[i] # how can I note this event? I want to make sure its very rare. I'll just print it.
+                        print("AHH using prior BELIEF, could not parse the following correctly", text_beliefs[i])
+                    else:
+                        belief = belief_texts[i]
+                        self.prior_beliefs[i] = belief
+                    self.prior_belief_messages[i] = None
+                    new_action_messages = [{'role':'user', 'content': COMBO_ACTION_PROMPT.format(agent_first_message=COMBO_AGENT_FIRST_MESSAGE.format_map({"vocab_list": list(self.config.env.vocab), "max_attempts": self.config.env.max_attempts}),
+                                                                                                belief_state=belief)}]
+                    postprocess_text_obs.append(new_action_messages)
         return postprocess_text_obs
     def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
         """

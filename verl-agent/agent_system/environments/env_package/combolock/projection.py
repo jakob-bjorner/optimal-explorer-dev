@@ -30,7 +30,7 @@ def combolock_projection(actions: List[str], generate_belief: List[bool], vocab)
         start_idx = actions[i].find(start_tag)
         end_idx = actions[i].find(end_tag)
         try:
-            if start_idx == -1 or end_idx == -1 or actions[i].lower().count(start_tag) > 1 or actions[i].lower().count(end_tag) > 1:
+            if start_idx == -1 or end_idx == -1:  #or actions[i].lower().count(start_tag) > 1 or actions[i].lower().count(end_tag) > 1:
                 # If we can't find a valid <action>...</action> block, mark as invalid
                 actions[i] = actions[i][-30:]  
                 continue
